@@ -1,0 +1,39 @@
+Package: inphDrugRepurposing
+Title: Computational Drug Repurposing for iNPH via Interferon-Activated
+    Monocyte Signature Reversal
+Version: 1.0.0
+Authors@R:
+    person("Masudul", "Haque", email = "masud.biochem.cu@gmail.com", role = c("aut", "cre"))
+Description: Computational pipeline reanalyzing a public single-cell RNA-seq
+    atlas of idiopathic normal pressure hydrocephalus (iNPH) to identify a
+    type I interferon-activated classical monocyte subcluster, derive a
+    300-gene cell-state signature, contextualize its magnitude against
+    systemic lupus erythematosus, and screen it against the LINCS L1000
+    perturbation database (THP1-primary connectivity ranking) to nominate
+    drug repurposing candidates. Includes an orthogonal Hallmark
+    interferon-alpha gene-set sensitivity analysis. Supports the analysis
+    reported in the associated manuscript, submitted to npj Systems Biology
+    and Applications.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.3.0)
+Imports:
+    Seurat,
+    harmony,
+    DESeq2,
+    AUCell,
+    signatureSearch,
+    ExperimentHub,
+    rhdf5,
+    here,
+    dplyr,
+    tidyr,
+    ggplot2,
+    patchwork,
+    purrr,
+    stringr,
+    readr
