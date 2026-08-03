@@ -50,11 +50,16 @@
 #
 # Dependencies
 # ------------
-# All packages are pinned in renv.lock. The pipeline targets duy_raw,
-# duy_extracted, duy_sce, duy_clustered, duy_annotated, duy_monocytes are
-# defined in _targets.R and use functions from R/data_loading.R and
-# R/clustering.R. This script complements those by performing the
-# subtype-level analysis interactively.
+# All packages are pinned in renv.lock. The starting monocyte population
+# (22,197 classical monocytes, PBMC, 9 patients) was originally built via
+# the targets pipeline (duy_raw -> duy_extracted -> duy_sce -> duy_clustered
+# -> duy_annotated -> duy_monocytes, defined in the now-archived _targets.R,
+# using R/data_loading.R and R/clustering.R). That pipeline implements the
+# abandoned study design and is intentionally excluded from this repository
+# (see Archived/). The saved, verified output of that final target -
+# data/processed/duy_monocytes_classical.rds - is loaded directly below
+# instead, so this script no longer depends on targets or _targets.R at
+# runtime. See README.md for details.
 #
 # =============================================================================
 
@@ -63,7 +68,6 @@
 # Section 0 · Environment
 # -----------------------------------------------------------------------------
 
-library(targets)
 library(here)
 library(Seurat)
 library(SingleCellExperiment)
@@ -77,37 +81,33 @@ library(dplyr)
 library(tibble)
 library(ggplot2)
 
-# Sanity check — confirm we are in the project root
-stopifnot(file.exists(here::here("_targets.R")))
-stopifnot(file.exists(here::here("config.yml")))
+# Sanity check — confirm the pre-built monocyte population is present
+stopifnot(file.exists(here::here("data", "processed", "duy_monocytes_classical.rds")))
 
 
 # -----------------------------------------------------------------------------
-# Section 1 · Pipeline preflight (Phase 1 targets up to monocyte isolation)
+# Section 1 · Load the pre-built monocyte population
 # -----------------------------------------------------------------------------
-# These pipeline targets handle:
-#   duy_raw         → download GSE292141 from GEO (~986 MB tar archive)
-#   duy_extracted   → untar into per-sample mtx triplets
-#   duy_sce         → load 10 PBMC samples, drop Patient 6, fix gene symbols
-#   duy_clustered   → QC (nFeature ≥ 200, %mt ≤ 20), normalize, Harmony
-#                     integration by patient, cluster at resolution 0.5
-#   duy_annotated   → score clusters on monocyte markers, label cluster 0
-#                     (the only pure classical monocyte cluster) as monocyte
-#   duy_monocytes   → subset to the 22,197 cells in cluster 0
+# This object was produced (once) by the same processing chain described
+# above: 124,047 raw PBMC cells -> 122,724 post-QC -> Harmony integration by
+# patient -> clustering at resolution 0.5 -> cluster 0 (the only pure
+# classical-monocyte cluster) subset out as the 22,197-cell starting
+# population used throughout this project.
 #
-# If these targets are not yet built (or the cache has been invalidated),
-# tar_make() will execute them. Total compute time on a fresh build:
-# approximately 30-45 minutes, dominated by Harmony integration and
-# Seurat clustering on 122,724 cells.
-
-targets::tar_make(duy_monocytes)
+# NOTE ON REPRODUCIBILITY: the clustering step inside this original chain
+# was not seeded. Re-deriving this object from raw data (e.g. via
+# R/data_loading.R + R/clustering.R, as done for Supplementary Figure S1)
+# will NOT reliably reproduce this exact 22,197-cell population, since
+# Harmony/Louvain clustering is stochastic. This saved object is therefore
+# the canonical starting point for the locked signature and all downstream
+# results - do not regenerate it from scratch as a substitute.
 
 
 # -----------------------------------------------------------------------------
 # Section 2 · Load monocyte SCE and confirm cohort structure
 # -----------------------------------------------------------------------------
 
-mono_sce <- targets::tar_read(duy_monocytes)
+mono_sce <- readRDS(here::here("data", "processed", "duy_monocytes_classical.rds"))
 mono_sce
 
 # Confirm: 22,197 monocytes, 9 patients (Patient 6 already dropped by the
