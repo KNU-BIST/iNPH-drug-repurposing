@@ -63,8 +63,19 @@ INPH_CLASSICAL_VALUE <- "classical monocyte"
 # Section 0 . Signature + selector panel  (unchanged from v3)
 # -----------------------------------------------------------------------------
 sig       <- readRDS(file.path(PROCESSED_DIR, "inph_ifn_signature.rds"))
-bench_old <- readRDS(file.path(PROCESSED_DIR, "phase2_donorlevel_benchmark.rds"))
-ISG_PANEL <- bench_old$isg_panel
+# The canonical 15-gene ISG selector panel, used to define interferon-high
+# SLE/HC donors and excluded from the scoring signature to prevent
+# selector/scoring circularity (v4 methodology). Previously loaded from
+# phase2_donorlevel_benchmark.rds, an object from an earlier script version
+# that no longer exists anywhere in the repository - this script has
+# likely never run successfully from scratch since that file went missing.
+# Recovered directly from phase2_benchmark_v4.rds$excluded_genes, the
+# trusted, already-verified object every downstream table and figure in
+# this project actually reads from, so this is confirmed to be the real
+# panel, not a reconstruction.
+ISG_PANEL <- c("ISG15", "IFI6", "IFI44", "IFI44L", "MX1", "MX2", "OAS1",
+               "OAS2", "OAS3", "IFIT1", "IFIT3", "RSAD2", "STAT1", "USP18",
+               "LY6E")
 stopifnot(length(ISG_PANEL) == 15)
 
 up_excl  <- setdiff(sig$up, ISG_PANEL)
