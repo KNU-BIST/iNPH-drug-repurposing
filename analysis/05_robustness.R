@@ -1,195 +1,114 @@
-# Phase 6A — Positive control
-# RA monocytes have a published IFN/JAK signature (GSE93272 or similar)
-# We'll use a manually curated RA ISG panel as a quick proxy positive control
+# =============================================================================
+# Phase 6 — Leave-one-out signature stability + gene-level persistence
+# =============================================================================
+#
+# WHAT CHANGED THIS SESSION (fresh-clone reproducibility test)
+# --------------------------------------------------------------------------
+# This file previously contained THREE unrelated things pasted together:
+#
+# 1. An RA "positive control" LINCS query. The exact circular 19+14 gene
+#    query traced and retired earlier in this project - all 19 UP genes
+#    overlapped the iNPH signature itself, never traceable to any real
+#    published RA paper. Dr. Nila's explicit instruction: "should not be
+#    mentioned or retained." REMOVED ENTIRELY. Also used tau=FALSE
+#    (inconsistent with tau=TRUE everywhere else) and referenced an
+#    undefined `lincs_meta` object - the same undefined-object bug found in
+#    the retired CLUEio script.
+#
+# 2. A dead diagnostic fragment inspecting an undefined `pseudobulk` object.
+#    Pure scratch code that would error if ever reached. REMOVED.
+#
+# 3. The actual robustness analysis - kept, but fixed. It depended on
+#    targets::tar_read(duy_monocytes) (same bug as script 01) AND re-ran
+#    Harmony/Louvain clustering from scratch to recover IFN cluster
+#    assignments, unseeded - the same stochasticity caveat documented for
+#    Supplementary Figure S1. FIXED by loading the canonical, already-
+#    clustered seu_monocyte_subclustered.rds directly instead - removes the
+#    targets dependency AND the reclustering stochasticity risk at once.
+#
+# Also removed: the duplicate LOO figure-generation block. 06_figures_all.R's
+# Fig4A already builds this figure, more completely, from the same
+# phase6_loo_stability.rds this script saves.
+#
+# GENE-LEVEL PERSISTENCE (phase6_loo_gene_persistence.csv) - RESOLVED
+# --------------------------------------------------------------------------
+# The code that originally produced this file was missing entirely from
+# this script, despite 06_figures_all.R (Fig4B) and 08_numbers_audit.R both
+# reading it. Rebuilt from run_loo_deseq()'s per-iteration top-150 gene
+# list, which the function already computed for the Jaccard calculation but
+# never returned.
+#
+# Two candidate definitions of "persistence" were tested and compared
+# earlier this session:
+#   Option 1 (adopted) - a gene counts as "entering the signature" in an
+#     iteration if it lands in that iteration's own top-150-by-log2FC list,
+#     the SAME ranking rule 01_phase1_signature_derivation.R uses to define
+#     the actual 150-gene signature. No secondary filter.
+#   Option 2 (rejected) - same rank-150 selection, plus an additional
+#     |log2FC| > 1 requirement borrowed from Figure 1D's volcano-plot
+#     coloring threshold. Tested directly: it barely changed the "tracked"
+#     count but pushed "stable in 9/9" further from internal consistency,
+#     not closer - evidence against this definition, not just a style
+#     preference.
+# Option 1 was adopted specifically because it is the SAME rule already
+# defining the signature everywhere else in the pipeline, not an
+# independently invented threshold. Confirmed by manuscript update: Figure
+# 4's legend and Results text now state 137 genes tracked / 107 stable in
+# 9/9, matching Option 1's output exactly, reproduced identically across
+# every run this session.
+#
+# This version saves directly to the canonical filename
+# (phase6_loo_gene_persistence.csv) that 06 and 08 expect - no manual
+# rename step required after running this script.
+#
+# =============================================================================
 
-# Published RA-elevated ISGs in monocytes (from literature)
-ra_up <- c("IFIT1","IFIT2","IFIT3","ISG15","MX1","OAS1","OAS2",
-           "RSAD2","IFI44L","HERC5","CXCL10","IFI6","IFITM3",
-           "USP18","SIGLEC1","IFI44","OASL","DDX58","IFIH1","TRIM22")
+library(here); library(dplyr); library(tidyr); library(readr)
+library(Seurat); library(SingleCellExperiment); library(SummarizedExperiment)
+library(Matrix); library(DESeq2)
 
-ra_down <- c("S100A8","S100A9","S100A12","CD14","FCGR3A",
-             "VCAN","LYZ","CTSS","AIF1","LST1",
-             "LILRB2","MS4A6A","CD36","NCF2","FCER1G")
-# Load
-lincs_genes <- rhdf5::h5read(lincs2_path, "rownames")[, 1]
-cat("LINCS2 genes reloaded:", length(lincs_genes), "\n")
+PROCESSED_DIR <- here::here("data", "processed")
 
-
-# Convert to Entrez
-ra_up_entrez <- symbol_to_entrez(ra_up)
-ra_down_entrez <- symbol_to_entrez(ra_down)
-
-cat("RA UP genes in LINCS2:", sum(ra_up_entrez %in% lincs_genes), "\n")
-cat("RA DOWN genes in LINCS2:", sum(ra_down_entrez %in% lincs_genes), "\n")
-
-qsig_ra <- qSig(
-  query = list(upset = ra_up_entrez, downset = ra_down_entrez),
-  gess_method = "LINCS",
-  refdb = lincs2_path
-)
-
-cat("Running positive control LINCS query (~20 min)...\n")
-BiocParallel::register(BiocParallel::SerialParam())
-ra_result <- gess_lincs(qsig_ra, sortby = "NCS",
-                        tau = FALSE, workers = 1)
-
-ra_table <- result(ra_result)
-
-# Check: do known RA drugs appear in reversal hits?
-ra_top_thp1 <- ra_table |>
-  dplyr::filter(type == "trt_cp", toupper(cell) == "THP1",
-                NCS < 0) |>
-  dplyr::arrange(NCS) |>
-  dplyr::left_join(lincs_meta |>
-                     dplyr::select(pert_id, pert_iname) |>
-                     dplyr::rename(pert = pert_id), by = "pert") |>
-  head(30)
-
-cat("\nRA positive control — top THP1 reversal hits:\n")
-print(ra_top_thp1 |> dplyr::select(pert_iname, cell, NCS, WTCS_FDR))
-
-# Known RA drugs in result
-ra_drugs <- c("methotrexate", "tofacitinib", "baricitinib",
-              "ruxolitinib", "leflunomide", "hydroxychloroquine",
-              "dexamethasone", "prednisolone")
-
-cat("\nKnown RA drugs in top reversal hits:\n")
-ra_table |>
-  dplyr::left_join(lincs_meta |>
-                     dplyr::select(pert_id, pert_iname) |>
-                     dplyr::rename(pert = pert_id), by = "pert") |>
-  dplyr::filter(tolower(pert_iname) %in% ra_drugs, NCS < 0) |>
-  dplyr::arrange(NCS) |>
-  dplyr::select(pert_iname, cell, NCS, WTCS_FDR) |>
-  print()
-
-saveRDS(ra_result, here::here("data/processed/phase6_positive_control_ra.rds"))
-
-
-
-
-
-
-################################################################################
-
-# Inspect the pseudobulk object structure
-cat("Class:", class(pseudobulk), "\n")
-cat("Names/slots:", paste(names(pseudobulk), collapse = ", "), "\n")
-
-# If it's a DESeqDataSet
-if (inherits(pseudobulk, "DESeqDataSet") ||
-    inherits(pseudobulk, "SummarizedExperiment")) {
-  cat("\nColData columns:\n")
-  print(colnames(SummarizedExperiment::colData(pseudobulk)))
-  cat("\nColData head:\n")
-  print(head(SummarizedExperiment::colData(pseudobulk)))
-  cat("\nDimensions:", dim(pseudobulk), "\n")
-}
-
-# If it's a list (edgeR DGEList or similar)
-if (is.list(pseudobulk) && !is.data.frame(pseudobulk)) {
-  cat("\nList elements:", paste(names(pseudobulk), collapse = ", "), "\n")
-  if ("samples" %in% names(pseudobulk)) {
-    cat("samples columns:", paste(colnames(pseudobulk$samples), collapse=", "), "\n")
-    print(head(pseudobulk$samples))
-  }
-  if ("counts" %in% names(pseudobulk)) {
-    cat("counts dim:", dim(pseudobulk$counts), "\n")
-    print(head(colnames(pseudobulk$counts)))
-  }
-}
-
-
-
-
-
-##
-library(targets); library(here); library(SingleCellExperiment)
-library(SummarizedExperiment); library(Matrix)
-library(Seurat); library(harmony); library(DESeq2); library(dplyr)
-
-# --- Reload from pipeline cache and disk ------------------------------------
-cat("Loading iNPH monocytes from targets cache...\n")
-inph_mono <- targets::tar_read(duy_monocytes)
-cat("  inph_mono:", ncol(inph_mono), "cells x", nrow(inph_mono), "genes\n")
+# -----------------------------------------------------------------------------
+# Section 1 . Load the canonical, already-clustered monocyte object
+# -----------------------------------------------------------------------------
+cat("Loading canonical clustered monocyte object...\n")
+seu <- readRDS(file.path(PROCESSED_DIR, "seu_monocyte_subclustered.rds"))
+cat("  Cells:", ncol(seu), "| Patients:", length(unique(seu$patient)), "\n")
 
 cat("Loading Phase 1 signature...\n")
-inph_signature <- readRDS(here::here("data/processed/inph_ifn_signature.rds"))
-cat("  UP:", length(inph_signature$up),
-    "| DOWN:", length(inph_signature$down), "\n")
+inph_signature <- readRDS(file.path(PROCESSED_DIR, "inph_ifn_signature.rds"))
+cat("  UP:", length(inph_signature$up), "| DOWN:", length(inph_signature$down), "\n")
 
-# --- Rebuild subclustering to recover IFN cell assignments ------------------
-cat("\nRebuilding monocyte subclustering (~5-10 min)...\n")
-seu <- Seurat::CreateSeuratObject(
-  counts    = SingleCellExperiment::counts(inph_mono),
-  meta.data = as.data.frame(SummarizedExperiment::colData(inph_mono))
-)
-seu <- Seurat::NormalizeData(seu,          verbose = FALSE)
-seu <- Seurat::FindVariableFeatures(seu,   verbose = FALSE)
-seu <- Seurat::ScaleData(seu,              verbose = FALSE)
-seu <- Seurat::RunPCA(seu, npcs = 30,      verbose = FALSE)
-seu <- harmony::RunHarmony(seu, group.by.vars = "patient", verbose = FALSE)
-seu <- Seurat::FindNeighbors(seu, reduction = "harmony",
-                             dims = 1:30,  verbose = FALSE)
-seu <- Seurat::FindClusters(seu, resolution = 0.5,
-                            cluster.name = "sub_res05", verbose = FALSE)
-
-# Verify IFN cluster identity
-ifn_panel  <- c("IFITM3","IFITM2","ISG15","MX1","OAS1","IRF7","STAT1")
-sce_sub    <- Seurat::as.SingleCellExperiment(seu)
-lc         <- SingleCellExperiment::logcounts(sce_sub)
-ifn_scores <- tapply(
-  Matrix::colMeans(lc[intersect(ifn_panel, rownames(lc)), ]),
-  seu$sub_res05, mean
-) |> sort(decreasing = TRUE)
-
-cat("\nIFN scores per subcluster:\n"); print(round(ifn_scores, 2))
-cat("Cluster sizes:\n"); print(table(seu$sub_res05))
-
-ifn_cluster <- names(ifn_scores)[1]
-cat("\nIFN-activated cluster:", ifn_cluster,
-    "(", sum(seu$sub_res05 == ifn_cluster), "cells )\n")
-
-# Confirm it's cluster 5 with 940 cells as before
+ifn_cluster <- "5"
 stopifnot(sum(seu$sub_res05 == ifn_cluster) == 940)
-cat("✓ Subclustering reproduced exactly\n")
+cat("Cluster 5 (IFN-activated):", sum(seu$sub_res05 == ifn_cluster), "cells - confirmed\n")
 
-# --- Build cell-state metadata ----------------------------------------------
+# -----------------------------------------------------------------------------
+# Section 2 . Build cell-state metadata (cluster 0 + cluster 5 only)
+# -----------------------------------------------------------------------------
 cell_meta <- data.frame(
   cell    = colnames(seu),
   patient = seu$patient,
-  state   = ifelse(seu$sub_res05 == ifn_cluster, "IFN", "classical"),
+  state   = dplyr::case_when(
+    seu$sub_res05 == ifn_cluster ~ "IFN",
+    seu$sub_res05 == "0"         ~ "classical",
+    TRUE                          ~ NA_character_
+  ),
   stringsAsFactors = FALSE
 )
-cat("\nCell-state counts:\n"); print(table(cell_meta$state))
-cat("Patients:", sort(unique(cell_meta$patient)), "\n")
-
-
-
-
-
-
-
-
-################################################################################
-# Phase 6B — Leave-one-out signature stability
-# Load Phase 1 pipeline objects needed for LOO
-
-library(targets); library(DESeq2); library(here)
-
-# Fix cell_meta — Phase 1 compared cluster 5 (IFN) vs cluster 0 only
-# not all 21,257 classical cells. Match Phase 1 exactly.
-cell_meta$state[seu$sub_res05 != ifn_cluster &
-                  seu$sub_res05 != "0"] <- NA
-
 cell_meta <- cell_meta[!is.na(cell_meta$state), ]
-cat("Cells for LOO (cluster 0 + cluster 5 only):\n")
+cat("\nCells for LOO (cluster 0 + cluster 5 only):\n")
 print(table(cell_meta$state))
-# Should be: classical=4904, IFN=940
+# Expect: classical = 4904, IFN = 940
 
-# --- LOO function -----------------------------------------------------------
-counts_mat <- SingleCellExperiment::counts(inph_mono)
+counts_mat <- Seurat::GetAssayData(seu, layer = "counts")
 
+# -----------------------------------------------------------------------------
+# Section 3 . Leave-one-out function - returns the top-150 gene vectors it
+# computes internally, used for both the Jaccard calculation and the
+# gene-level persistence tracking in Section 6
+# -----------------------------------------------------------------------------
 run_loo_deseq <- function(drop_patient, cell_meta, counts_mat,
                           full_up, full_dn, top_n = 150) {
   meta_loo <- cell_meta |>
@@ -198,7 +117,6 @@ run_loo_deseq <- function(drop_patient, cell_meta, counts_mat,
   meta_loo$group <- paste0("P", meta_loo$patient, "_", meta_loo$state)
   groups <- unique(meta_loo$group)
 
-  # Pseudobulk: sum counts per patient × state
   pb_mat <- sapply(groups, function(g) {
     cells <- meta_loo$cell[meta_loo$group == g]
     Matrix::rowSums(counts_mat[, cells, drop = FALSE])
@@ -225,6 +143,10 @@ run_loo_deseq <- function(drop_patient, cell_meta, counts_mat,
   res_df <- as.data.frame(res) |>
     dplyr::filter(!is.na(padj), padj < 0.05)
 
+  # Top-150-by-log2FC, same ranking rule as the full-cohort signature
+  # derivation in 01_phase1_signature_derivation.R. This IS the definition
+  # of "entering the signature" used for gene-level persistence in
+  # Section 6 below - no secondary filter.
   loo_up <- rownames(res_df |>
                        dplyr::arrange(dplyr::desc(log2FoldChange)) |> head(top_n))
   loo_dn <- rownames(res_df |>
@@ -239,11 +161,14 @@ run_loo_deseq <- function(drop_patient, cell_meta, counts_mat,
     jaccard_up   = round(jaccard(loo_up, full_up), 3),
     jaccard_dn   = round(jaccard(loo_dn, full_dn), 3),
     jaccard_mean = round(mean(c(jaccard(loo_up, full_up),
-                                jaccard(loo_dn, full_dn))), 3)
+                                jaccard(loo_dn, full_dn))), 3),
+    loo_up       = loo_up
   )
 }
 
-# --- Run all 9 LOO iterations -----------------------------------------------
+# -----------------------------------------------------------------------------
+# Section 4 . Run all 9 LOO iterations
+# -----------------------------------------------------------------------------
 all_patients <- sort(unique(cell_meta$patient))
 cat("\nStarting LOO —", length(all_patients),
     "iterations (~4 min each, ~35 min total)\n\n")
@@ -266,8 +191,12 @@ for (pt in all_patients) {
               loo_results[[as.character(pt)]]$jaccard_mean))
 }
 
-# --- Summary ----------------------------------------------------------------
-loo_df <- do.call(rbind, lapply(loo_results, as.data.frame))
+# -----------------------------------------------------------------------------
+# Section 5 . Summary + save (Jaccard-only table, unchanged shape throughout)
+# -----------------------------------------------------------------------------
+loo_df <- do.call(rbind, lapply(loo_results, function(x) {
+  as.data.frame(x[c("dropped", "n_sig", "jaccard_up", "jaccard_dn", "jaccard_mean")])
+}))
 rownames(loo_df) <- NULL
 
 cat("\n=== Phase 6 — Leave-One-Out Stability ===\n")
@@ -279,64 +208,41 @@ cat(sprintf("Min  Jaccard UP  : %.3f\n", min(loo_df$jaccard_up)))
 cat(sprintf("Min  Jaccard DOWN: %.3f\n", min(loo_df$jaccard_dn)))
 cat(sprintf("Overall mean     : %.3f\n",
             mean(c(loo_df$jaccard_up, loo_df$jaccard_dn))))
-cat(sprintf("\nPass (≥0.70)     : %s\n",
+cat(sprintf("\nPass (>=0.70)    : %s\n",
             ifelse(mean(c(loo_df$jaccard_up, loo_df$jaccard_dn)) >= 0.70,
-                   "YES ✓", "NO — investigate which patient drives instability")))
+                   "YES", "NO - investigate which patient drives instability")))
 
-saveRDS(loo_df, here::here("data/processed/phase6_loo_stability.rds"))
-cat("Saved.\n")
+saveRDS(loo_df, file.path(PROCESSED_DIR, "phase6_loo_stability.rds"))
+cat("\nSaved: phase6_loo_stability.rds\n")
 
+# -----------------------------------------------------------------------------
+# Section 6 . Gene-level persistence - saved directly under the canonical
+# filename that 06_figures_all.R and 08_numbers_audit.R expect. No manual
+# rename needed after this script runs.
+# -----------------------------------------------------------------------------
+cat("\n=== Gene-level persistence ===\n")
 
+all_loo_up <- unlist(lapply(loo_results, function(x) x$loo_up))
+gene_counts_up <- table(all_loo_up)
 
-################################################################################
-library(ggplot2)
+persist_df <- data.frame(
+  gene    = names(gene_counts_up),
+  n_iters = as.integer(gene_counts_up),
+  stringsAsFactors = FALSE
+) |>
+  dplyr::mutate(in_sig = gene %in% inph_signature$up) |>
+  dplyr::arrange(dplyr::desc(n_iters))
 
-loo_plot_df <- loo_df |>
-  dplyr::mutate(
-    patient_label  = paste0("P", dropped),
-    moca_group     = ifelse(dropped %in% c(1,2,3,4,5), "High MOCA", "Low MOCA"),
-    pass           = jaccard_mean >= 0.70
-  ) |>
-  tidyr::pivot_longer(cols = c(jaccard_up, jaccard_dn),
-                      names_to = "set", values_to = "jaccard") |>
-  dplyr::mutate(
-    set = ifelse(set == "jaccard_up", "UP genes", "DOWN genes")
-  )
+n_tracked <- sum(persist_df$in_sig)
+n_stable  <- sum(persist_df$n_iters == 9 & persist_df$in_sig)
 
-p_loo <- ggplot(loo_plot_df,
-                aes(x = reorder(patient_label, -jaccard_mean),
-                    y = jaccard, color = moca_group, shape = set)) +
-  geom_hline(yintercept = 0.70, linetype = "dashed",
-             color = "#d4624a", linewidth = 0.7) +
-  geom_point(size = 4, alpha = 0.9) +
-  annotate("text", x = 0.6, y = 0.715, label = "Threshold = 0.70",
-           hjust = 0, size = 3.2, color = "#d4624a", fontface = "italic") +
-  scale_color_manual(
-    values = c("High MOCA" = "#7a8c6a", "Low MOCA" = "#b04a36"),
-    name = "MOCA group"
-  ) +
-  scale_shape_manual(
-    values = c("UP genes" = 16, "DOWN genes" = 17),
-    name = "Gene set"
-  ) +
-  scale_y_continuous(limits = c(0.60, 0.85), breaks = seq(0.60, 0.85, 0.05)) +
-  labs(
-    x        = "Patient removed",
-    y        = "Jaccard similarity to full signature",
-    title    = "Phase 6 — Leave-one-out signature stability",
-    subtitle = paste0(
-      "Each point = Jaccard similarity between the LOO signature ",
-      "and the full 9-patient signature\n",
-      "Overall mean: UP = 0.714 | DOWN = 0.733 | Combined = 0.724"
-    )
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(plot.title = element_text(face = "bold"),
-        legend.position = "right")
+cat("Genes tracked, in original UP signature, appearing in >=1 LOO iteration\n")
+cat("  (manuscript: 137):", n_tracked, "\n")
+cat("Of those, stable in all 9 iterations\n")
+cat("  (manuscript: 107):", n_stable, "\n")
 
-print(p_loo)
-ggsave(here::here("figures/phase6_loo_stability.pdf"),
-       p_loo, width = 7, height = 4.5)
-ggsave(here::here("figures/phase6_loo_stability.png"),
-       p_loo, width = 7, height = 4.5, dpi = 300)
-cat("LOO figure saved.\n")
+readr::write_csv(persist_df, file.path(PROCESSED_DIR, "phase6_loo_gene_persistence.csv"))
+cat("\nSaved: phase6_loo_gene_persistence.csv (canonical filename, ", nrow(persist_df),
+    " rows total, ", n_tracked, " with in_sig=TRUE)\n", sep = "")
+
+cat("\n=== Phase 6 robustness (LOO stability + gene persistence) complete ===\n")
