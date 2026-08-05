@@ -61,3 +61,4 @@ secrets/
 .Renviron
 # Internal archive - superseded scripts/data, kept locally only
 Archived/
+.positai

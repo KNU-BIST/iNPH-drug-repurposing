@@ -92,17 +92,24 @@ run_qc_and_clustering <- function(sce,
 #' Identify monocyte-positive clusters by marker gene expression
 #'
 #' Scores each cluster on a panel of canonical monocyte markers and labels
-#' clusters above a percentile threshold as monocytes. Returns the input SCE
-#' with a new `cell_type` column.
+#' as monocytes any cluster whose score is within `relative_threshold` of
+#' the single highest-scoring cluster. This is adaptive to whatever real
+#' separation exists in the data, rather than a fixed absolute cutoff -
+#' and, since clustering resolution/numbering is not seeded elsewhere in
+#' this pipeline, it identifies the monocyte-enriched cluster(s) by score
+#' pattern rather than by a specific cluster ID, so it survives a future
+#' rebuild landing on a different cluster number for the same biology.
 #'
 #' @param sce clustered SCE from run_qc_and_clustering().
 #' @param markers character vector of monocyte marker genes.
-#' @param threshold_quantile clusters above this quantile of mean marker score
-#'   are labeled monocytes (default 0.5 = top half).
+#' @param relative_threshold clusters scoring at least this fraction of the
+#'   top cluster's score are labeled monocytes (default 0.75 - i.e. within
+#'   25% of the top score joins the same tier; a real gap below this is
+#'   treated as a different population).
 identify_monocytes <- function(sce,
                                markers = c("CD14", "LYZ", "S100A8", "S100A9",
                                            "FCN1", "VCAN", "CD68", "CST3"),
-                               score_threshold = 1.0,
+                               relative_threshold = 0.75,
                                clusters_override = NULL) {
   logger::log_info("Identifying monocyte clusters via marker score.")
 
@@ -137,15 +144,17 @@ identify_monocytes <- function(sce,
     monocyte_clusters <- as.character(clusters_override)
     logger::log_info("Using override cluster list: {paste(monocyte_clusters, collapse=',')}")
   } else {
-    monocyte_clusters <- names(cluster_scores)[cluster_scores >= score_threshold]
+    top_score <- max(cluster_scores)
+    score_cutoff <- relative_threshold * top_score
+    monocyte_clusters <- names(cluster_scores)[cluster_scores >= score_cutoff]
     if (length(monocyte_clusters) == 0) {
-      stop("No clusters passed score_threshold = ", score_threshold,
-           ". Highest cluster score: ", round(max(cluster_scores), 2))
+      stop("No clusters passed relative_threshold = ", relative_threshold,
+           ". Highest cluster score: ", round(top_score, 2))
     }
   }
 
   logger::log_info("Cluster marker scores: {paste(names(cluster_scores), round(cluster_scores, 2), sep='=', collapse=', ')}")
-  logger::log_info("Monocyte clusters (≥ {score_threshold}): {paste(monocyte_clusters, collapse=', ')}")
+  logger::log_info("Monocyte clusters (>= {relative_threshold} of top score {round(max(cluster_scores), 2)}): {paste(monocyte_clusters, collapse=', ')}")
   # Label cells
   sce$cell_type <- ifelse(
     as.character(SummarizedExperiment::colData(sce)[[cluster_col]]) %in% monocyte_clusters,

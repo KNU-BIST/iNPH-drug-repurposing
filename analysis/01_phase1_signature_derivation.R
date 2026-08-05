@@ -61,6 +61,20 @@
 # instead, so this script no longer depends on targets or _targets.R at
 # runtime. See README.md for details.
 #
+# FIX THIS SESSION (fresh-clone reproducibility test)
+# -----------------------------------------------------------------------
+# This script builds `seu`, the fully subclustered Seurat object (sub_res05
+# assignments, patient/moca_group metadata, UMAP embedding), and every
+# downstream script in this pipeline - 02_lupus_benchmark.R, 05_robustness.R,
+# 06_figures_all.R, 08_numbers_audit.R - loads it back from
+# data/processed/seu_monocyte_subclustered.rds. But this script never
+# actually wrote that file: Section 10 only ever saved inph_ifn_signature.rds,
+# de_ifn_subtype_results.rds, and subcluster_diagnostic.rds. This worked
+# invisibly on the original machine only because a copy of that file already
+# existed there from an earlier session - the same silent-dependency pattern
+# already found and fixed in the targets/_targets.R issue. Fixed by adding
+# the missing save in Section 10, right after the other three outputs.
+#
 # =============================================================================
 
 
@@ -388,10 +402,21 @@ saveRDS(de_subtype,
 saveRDS(diagnostic,
         here::here("data/processed/subcluster_diagnostic.rds"))
 
+# FIX THIS SESSION: this save was missing entirely. seu (fully subclustered:
+# sub_res05, patient, moca_group, UMAP embedding) is what 02_lupus_benchmark.R,
+# 05_robustness.R, 06_figures_all.R, and 08_numbers_audit.R all load back via
+# this exact filename. Without this line, the script silently depended on a
+# copy of this file already existing from an earlier session - it never
+# actually produced its own most heavily-used output. See header note.
+saveRDS(seu,
+        here::here("data/processed/seu_monocyte_subclustered.rds"))
+
 cat("\nFinal outputs saved:\n")
-cat("  data/processed/inph_ifn_signature.rds       (Phase 1 signature for LINCS query)\n")
-cat("  data/processed/de_ifn_subtype_results.rds   (full DE table)\n")
-cat("  data/processed/subcluster_diagnostic.rds    (subcluster annotation table)\n")
+cat("  data/processed/inph_ifn_signature.rds          (Phase 1 signature for LINCS query)\n")
+cat("  data/processed/de_ifn_subtype_results.rds      (full DE table)\n")
+cat("  data/processed/subcluster_diagnostic.rds       (subcluster annotation table)\n")
+cat("  data/processed/seu_monocyte_subclustered.rds   (clustered Seurat object - used by\n")
+cat("                                                   scripts 02, 05, 06, 08)\n")
 
 
 # -----------------------------------------------------------------------------

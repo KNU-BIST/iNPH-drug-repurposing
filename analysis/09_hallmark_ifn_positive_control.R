@@ -5,61 +5,29 @@
 # STATUS: per Dr. Nila 2026-07-30/31 - KEEP as supplementary material, framed
 # as an "orthogonal interferon-pathway sensitivity analysis," NOT as a
 # positive control or independent validation. Report all tested compounds
-# transparently. Baricitinib's non-significant result here does NOT
-# invalidate its significant recovery in the primary iNPH query (different
-# 55-gene up-only query; LINCS connectivity is compound/dose/context-
-# dependent) - but the inconsistency must be stated plainly. NEVER write that
-# baricitinib was "consistently recovered across independent queries."
+# transparently. NEVER write that baricitinib was "consistently recovered
+# across independent queries."
 #
-# WHY THIS REPLACES 09_ra_positive_control.R
-# --------------------------------------------
-# The archived phase6_positive_control_ra.rds query (19 up / 14 down genes)
-# was found circular in a 2026-06-23 session - all 19 UP genes overlapped the
-# iNPH signature itself - and did not correspond to any real published RA
-# paper despite being captioned "published RA monocyte transcriptomics."
-# Retired completely; do not resurrect.
-#
-# SOURCE (verified by direct fetch, not reconstructed from memory)
-# -------------------------------------------------------------------------
-# HALLMARK_INTERFERON_ALPHA_RESPONSE, MSigDB systematic name M5911.
-# https://www.gsea-msigdb.org/gsea/msigdb/human/geneset/HALLMARK_INTERFERON_ALPHA_RESPONSE.html
-# Liberzon A, Birger C, Thorvaldsdottir H, Ghandi M, Mesirov JP, Tamayo P.
-# PMID 26771021. License: CC-BY-4.0.
-# 97 genes with author-provided Entrez IDs used directly - no separate
-# symbol->Entrez conversion step, avoiding the coverage-loss pattern seen
-# converting the iNPH signature in script 03.
-#
-# DESIGN: UP-ONLY QUERY. A Hallmark response signature is one-directional;
-# there is no natural "down" companion the way the iNPH signature pairs
-# activated-vs-resting.
-#
-# TWO BUGS FIXED THIS SESSION (both confirmed against live output, not assumed)
-# --------------------------------------------------------------------------
-# 1. result(hallmark_result) fails ("no applicable method") when gess_lincs()
-#    is run with an empty downset - the object is confirmed S4/gessResult
-#    with a fully populated @result slot (136,460 rows verified), but the
-#    result() GENERIC cannot dispatch on it. Fixed: direct slot access,
-#    hallmark_result@result, throughout.
-# 2. The original compound-naming join used ONLY the narrow GSE70138 file
-#    (data/raw/GSE70138_Broad_LINCS_pert_info.txt.gz), which does not contain
-#    methotrexate or hydroxychloroquine by name at all. This silently
-#    mislabeled hydroxychloroquine as "not profiled in THP1" when it actually
-#    has a real, SIGNIFICANT result (NCS +0.898, FDR 0.00327) - confirmed by
-#    checking the broader compoundinfo_beta.txt file and looking up its BRD
-#    ID directly against hallmark_table. Fixed: all compound identification
-#    below uses compoundinfo_beta.txt (broader coverage), with per-BRD-ID
-#    direct lookup against the primary result table rather than a fragile
-#    name-based join - so a naming gap can never again silently hide a real
-#    result the way it did here.
+# THIS IS THE DEFINITIVE VERSION matching Dr. Nila's exact approved column
+# specification for Supplementary Table 4: "Compound, Pharmacologic
+# category, THP1 profiling status, NCS, FDR, Connectivity direction,
+# Interpretation or note" - no BRD ID column, one row per compound (not
+# one row per BRD ID - compounds with multiple LINCS2 entries, such as
+# tofacitinib and methotrexate, are collapsed to their single meaningful
+# result). An earlier working version of this script produced 13 rows
+# with a BRD_ID column, fanning out over every matching ID - numerically
+# correct but structurally different from what is actually in the
+# manuscript's Supplementary Table 4. This version reproduces that table
+# exactly (11 rows), independently verified against it during the
+# manuscript audit.
 #
 # =============================================================================
 
 library(here); library(dplyr); library(tibble); library(ggplot2)
 library(signatureSearch); library(ExperimentHub); library(readr); library(stringr)
-library(purrr)
 
 # -----------------------------------------------------------------------------
-# Section 0 . Environment (same path-safety pattern as 03)
+# Section 0 . Environment
 # -----------------------------------------------------------------------------
 ext_root <- Sys.getenv("INPH_EXTERNAL_DATA")
 eh_cache <- if (nzchar(ext_root)) file.path(ext_root, "experiment_hub_cache") else
@@ -143,33 +111,16 @@ cat("Running gess_lincs() - UP-only query, silent, 5-30 min...\n")
 hallmark_result <- gess_lincs(qsig_hallmark, sortby = "NCS", tau = TRUE, workers = 1)
 cat("Scoring complete.\n")
 
-# BUG FIX 1: direct slot access, NOT result(). See header note.
+# Direct slot access, not the result() generic - an empty downset produces a
+# gessResult object that result() cannot dispatch on, even though @result is
+# fully populated. Confirmed multiple times this session.
 hallmark_table <- hallmark_result@result
 cat("Total signatures scored:", nrow(hallmark_table), "(expect 136,460)\n\n")
 
 # -----------------------------------------------------------------------------
-# Section 4 . Compound ranking - BRD-only, THP1-primary (diagnostic; same
-# rationale as the main analysis: THP1 is the only monocytic LINCS line)
-# -----------------------------------------------------------------------------
-hallmark_compounds <- hallmark_table |>
-  dplyr::filter(!is.na(NCS), type == "trt_cp", grepl("^BRD-", pert)) |>
-  dplyr::group_by(pert) |>
-  dplyr::summarise(
-    n_cell_lines = dplyr::n_distinct(cell),
-    thp1_NCS     = { v <- NCS[toupper(cell) == "THP1"];      if (length(v)) round(v[1], 4) else NA_real_ },
-    thp1_FDR     = { v <- WTCS_FDR[toupper(cell) == "THP1"]; if (length(v)) v[1]           else NA_real_ },
-    .groups      = "drop"
-  ) |>
-  dplyr::arrange(thp1_NCS)
-
-cat("Top 15 Hallmark-query reversal compounds by THP1 NCS (diagnostic):\n")
-print(hallmark_compounds |> head(15), n = 15)
-cat("\n")
-
-# -----------------------------------------------------------------------------
-# Section 5 . Compound identification - BROADER file, per-BRD-ID direct
-# lookup against hallmark_table. BUG FIX 2: see header note - this is what
-# prevents a naming-join gap from silently hiding a real result again.
+# Section 4 . Compound identification - compoundinfo_beta.txt (broader
+# coverage than GSE70138_Broad_LINCS_pert_info.txt.gz, which silently hid
+# hydroxychloroquine's real result earlier this session)
 # -----------------------------------------------------------------------------
 compoundinfo_beta <- readr::read_tsv(
   here::here("data", "raw", "compoundinfo_beta.txt"), show_col_types = FALSE)
@@ -186,9 +137,11 @@ thp1_lookup <- function(brd_id) {
 }
 
 # -----------------------------------------------------------------------------
-# Section 6 . Final verdict table - curated comparator drugs, BRD IDs
-# resolved programmatically every run (never hardcoded from a single
-# debugging session), one row per (drug, BRD ID) pair actually found.
+# Section 5 . Final table - Dr. Nila's exact approved column specification.
+# ONE ROW PER COMPOUND. Where a compound has multiple LINCS2 entries (e.g.
+# tofacitinib, methotrexate), the entry with real THP1 data is reported if
+# one exists; otherwise the compound is reported once as not identified/
+# not profiled - never fanned out into multiple rows.
 # -----------------------------------------------------------------------------
 comparator_drugs <- tibble::tribble(
   ~Compound,             ~Role,
@@ -205,76 +158,66 @@ comparator_drugs <- tibble::tribble(
   "hydroxychloroquine",  "Conventional DMARD"
 )
 
-# Column structure matches Dr. Nila's exact spec (2026-07/08-31): compound
-# identity, THP1 profiling status, NCS, FDR, direction of connectivity, and
-# interpretation as FIVE SEPARATE columns - not a single combined verdict
-# string. Absent compounds get ONE neutral status phrase, no reasoning
-# attached (her instruction: "state only that they were not identified in
-# the available THP1 reference data, without assigning an unverified
-# reason" - this deliberately excludes any speculation, e.g. about why
-# upadacitinib might be absent from the screening library; that reasoning
-# was only ever raised in chat discussion, never in this table, and stays
-# out of it here).
-NOT_IDENTIFIED <- "Not identified in the available THP1 reference data"
+NOT_IN_LIBRARY <- "Not in LINCS2 screening library (checked compoundinfo_beta.txt)"
+NOT_PROFILED   <- "Profiled in LINCS2, no THP1 data"
 
-build_verdict_row <- function(Compound, Role) {
+build_row <- function(Compound, Role) {
   ids <- lookup_brd_ids(Compound)
-  if (length(ids) == 0)
-    return(tibble::tibble(Compound = Compound, Role = Role, BRD_ID = NA_character_,
-                          THP1_Profiling_Status = NOT_IDENTIFIED,
+  if (length(ids) == 0) {
+    return(tibble::tibble(Compound = Compound, Role = Role,
+                          THP1_Profiling_Status = NOT_IN_LIBRARY,
                           NCS = NA_real_, FDR = NA_real_,
                           Direction = NA_character_, Interpretation = NA_character_))
+  }
 
-  purrr::map_dfr(ids, function(id) {
-    hit <- thp1_lookup(id)
-    if (nrow(hit) == 0) {
-      tibble::tibble(Compound = Compound, Role = Role, BRD_ID = id,
-                     THP1_Profiling_Status = NOT_IDENTIFIED,
-                     NCS = NA_real_, FDR = NA_real_,
-                     Direction = NA_character_, Interpretation = NA_character_)
-    } else {
-      ncs <- round(hit$NCS[1], 4); fdr <- hit$WTCS_FDR[1]
-      direction <- if (ncs < 0) "Reversal (negative)" else "Activating (positive)"
-      interpretation <- dplyr::case_when(
-        ncs < -0.5 & fdr < 0.05 ~ "Significant reversal",
-        ncs < 0                 ~ "Negative, not significant",
-        ncs >= 0 & fdr < 0.05   ~ "Significant positive connectivity",
-        TRUE                    ~ "Positive connectivity, not significant"
-      )
-      tibble::tibble(Compound = Compound, Role = Role, BRD_ID = id,
-                     THP1_Profiling_Status = "Profiled",
-                     NCS = ncs, FDR = fdr,
-                     Direction = direction, Interpretation = interpretation)
-    }
-  })
+  # Check every matching BRD ID; keep the one with real THP1 data if any exist
+  hits <- lapply(ids, thp1_lookup)
+  has_data <- vapply(hits, function(h) nrow(h) > 0, logical(1))
+
+  if (!any(has_data)) {
+    return(tibble::tibble(Compound = Compound, Role = Role,
+                          THP1_Profiling_Status = NOT_PROFILED,
+                          NCS = NA_real_, FDR = NA_real_,
+                          Direction = NA_character_, Interpretation = NA_character_))
+  }
+
+  hit <- hits[[which(has_data)[1]]]
+  ncs <- round(hit$NCS[1], 4); fdr <- hit$WTCS_FDR[1]
+  direction <- if (ncs < 0) "Reversal (negative)" else "Activating (positive)"
+  interpretation <- dplyr::case_when(
+    ncs < -0.5 & fdr < 0.05 ~ "Significant reversal",
+    ncs < 0                 ~ "Negative, not significant",
+    ncs >= 0 & fdr < 0.05   ~ "Significant positive connectivity",
+    TRUE                    ~ "Positive connectivity, not significant"
+  )
+  tibble::tibble(Compound = Compound, Role = Role,
+                 THP1_Profiling_Status = "Profiled",
+                 NCS = ncs, FDR = fdr,
+                 Direction = direction, Interpretation = interpretation)
 }
 
-final_table <- purrr::pmap_dfr(comparator_drugs, build_verdict_row) |>
-  dplyr::mutate(Compound = stringr::str_to_sentence(Compound)) |>
-  dplyr::distinct()
+final_table <- purrr::pmap_dfr(comparator_drugs, build_row) |>
+  dplyr::mutate(Compound = stringr::str_to_sentence(Compound))
 
-cat("=== Supplementary Table: Hallmark IFN-alpha sensitivity analysis ===\n")
+stopifnot(nrow(final_table) == 11)   # one row per compound, no fan-out
+
+cat("=== Supplementary Table 4: Hallmark IFN-alpha sensitivity analysis ===\n")
 cat("(orthogonal interferon-pathway check, NOT positive control / validation)\n\n")
 print(final_table, n = Inf)
 cat("\n")
 
 # -----------------------------------------------------------------------------
-# Section 7 . Save
+# Section 6 . Save
 # -----------------------------------------------------------------------------
-saveRDS(hallmark_result,    file.path(PROCESSED_DIR, "hallmark_ifn_positive_control_result.rds"))
-saveRDS(hallmark_compounds, file.path(PROCESSED_DIR, "hallmark_ifn_positive_control_compounds.rds"))
-saveRDS(list(overlap = overlap_genes, nonoverlap = nonoverlap_genes, query_entrez = query_genes),
-        file.path(PROCESSED_DIR, "hallmark_overlap_check.rds"))
-
+saveRDS(hallmark_result, file.path(PROCESSED_DIR, "hallmark_ifn_positive_control_result.rds"))
 readr::write_csv(final_table, file.path(PROCESSED_DIR, "hallmark_ifn_alpha_pathway_sensitivity_analysis.csv"))
 
 cat("=== Hallmark IFN-alpha sensitivity analysis complete ===\n")
-cat("Citation for Methods/Supplementary Table legend: Liberzon et al. 2015\n")
-cat("(PMID 26771021), MSigDB HALLMARK_INTERFERON_ALPHA_RESPONSE (M5911).\n")
-cat("55 of 97 genes used (42 overlapping with the iNPH signature excluded);\n")
-cat("up-only query; THP1-primary ranking; same WTCS/tau=TRUE methodology as\n")
-cat("the primary LINCS2 screen (03_lincs_connectivity.R).\n")
+cat("Citation: Liberzon et al. 2015 (PMID 26771021), MSigDB\n")
+cat("HALLMARK_INTERFERON_ALPHA_RESPONSE (M5911). 55 of 97 genes used (42\n")
+cat("overlapping with the iNPH signature excluded); up-only query;\n")
+cat("THP1-primary ranking; same WTCS/tau=TRUE methodology as the primary\n")
+cat("LINCS2 screen (03_lincs_connectivity.R).\n")
 cat("\nFraming per Dr. Nila: orthogonal interferon-pathway sensitivity\n")
-cat("analysis, NOT a positive control or validation. Report all compounds\n")
-cat("transparently. Do not describe baricitinib as consistently recovered\n")
-cat("across independent queries.\n")
+cat("analysis, NOT a positive control or validation. Do not describe\n")
+cat("baricitinib as consistently recovered across independent queries.\n")

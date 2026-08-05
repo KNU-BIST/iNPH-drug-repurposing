@@ -309,8 +309,8 @@ cat("Mean Jaccard UP (manuscript 0.714):", round(mean(loo$jaccard_up),3), "\n")
 cat("Mean Jaccard DOWN (manuscript 0.733):", round(mean(loo$jaccard_dn),3), "\n")
 cat("Combined mean (manuscript 0.724):", round(mean(c(loo$jaccard_up,loo$jaccard_dn)),3), "\n")
 persist <- read.csv(file.path(PROCESSED_DIR, "phase6_loo_gene_persistence.csv"))
-cat("Genes tracked (manuscript 103):", nrow(persist[persist$in_sig,]), "\n")
-cat("Genes stable in 9/9 (manuscript 96):", sum(persist$n_iters==9 & persist$in_sig), "\n\n")
+cat("Genes tracked (manuscript 137):", nrow(persist[persist$in_sig,]), "\n")
+cat("Genes stable in 9/9 (manuscript 107):", sum(persist$n_iters==9 & persist$in_sig), "\n\n")
 
 ## ---- 16. FIGURE OUTPUT: EXISTENCE, FRESHNESS, KEY NUMBERS ----
 cat("---- 16. FIGURE OUTPUT: EXISTENCE, FRESHNESS, KEY NUMBERS ----\n")

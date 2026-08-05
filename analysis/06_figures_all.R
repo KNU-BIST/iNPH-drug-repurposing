@@ -745,7 +745,7 @@ save_panel(p_loo, "fig4_panelA_loo_stability", W_LOO, H_LOO)
 {
   P4B_TIER_COLORS <- c("Core stable (9/9)" = PAL$good,
                        "High (7\u20138/9)"  = "#8CB89A",
-                       "Variable (\u22645/9)" = PAL$disease)
+                       "Variable (\u22646/9)" = PAL$disease)
   P4B_ISG_LABEL <- c("PARP14","HERC5","OAS3","IFIT3","ISG15","IFIT1",
                      "OAS1","RSAD2","MX1","IFIT2","SIGLEC1","CXCL10")
 
@@ -760,13 +760,13 @@ save_panel(p_loo, "fig4_panelA_loo_stability", W_LOO, H_LOO)
       tier = dplyr::case_when(
         n_iters == 9        ~ "Core stable (9/9)",
         n_iters %in% c(7,8) ~ "High (7\u20138/9)",
-        TRUE                ~ "Variable (\u22645/9)"),
+        TRUE                ~ "Variable (\u22646/9)"),
       tier = factor(tier, levels = names(P4B_TIER_COLORS)),
       label = ifelse(gene %in% P4B_ISG_LABEL, gene, NA_character_))
 
   n_core <- sum(p4b_df$tier == "Core stable (9/9)")
   n_high <- sum(p4b_df$tier == "High (7\u20138/9)")
-  n_var  <- sum(p4b_df$tier == "Variable (\u22645/9)")
+  n_var  <- sum(p4b_df$tier == "Variable (\u22646/9)")
 
   p_persist <- ggplot(p4b_df, aes(x = tier, y = neglog10fdr, fill = tier)) +
     geom_hline(yintercept = -log10(0.05), linetype = "dashed",
@@ -785,9 +785,9 @@ save_panel(p_loo, "fig4_panelA_loo_stability", W_LOO, H_LOO)
     labs(x = "Leave-one-out stability tier",
          y = expression(bold(-log[10]~"(FDR), full DE analysis")),
          title = "LOO per-gene persistence versus DE significance",
-         subtitle = paste0("103 genes entering the signature in \u22651 iteration | ",
-                           "core 9/9 n = ", n_core, "; high 7\u20138/9 n = ", n_high,
-                           "; variable \u22645/9 n = ", n_var)) +
+         subtitle = paste0("137 genes entering the signature in ≥1 iteration | ",
+                           "core 9/9 n = ", n_core, "; high 7–8/9 n = ", n_high,
+                           "; variable ≤6/9 n = ", n_var)) +
     THEME_BASE +
     theme(panel.grid.major.x = element_blank(),
           axis.text.x = element_text(color = "black", face = "bold"))
