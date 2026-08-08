@@ -1,22 +1,24 @@
 Package: inphDrugRepurposing
-Title: Computational Drug Repurposing for iNPH via Interferon-Activated
-    Monocyte Signature Reversal
+Title: Systems Biology Prioritizes Drug Candidates for Interferon-Activated
+    Monocytes in Idiopathic Normal Pressure Hydrocephalus
 Version: 1.0.0
 Authors@R:
-    person("Masudul", "Haque", email = "masud.biochem.cu@gmail.com", role = c("aut", "cre"))
-Description: Computational pipeline reanalyzing a public single-cell RNA-seq
-    atlas of idiopathic normal pressure hydrocephalus (iNPH) to identify a
-    type I interferon-activated classical monocyte subcluster, derive a
-    300-gene cell-state signature, contextualize its magnitude against
-    systemic lupus erythematosus, and screen it against the LINCS L1000
-    perturbation database (THP1-primary connectivity ranking) to nominate
-    drug repurposing candidates. Includes an orthogonal Hallmark
-    interferon-alpha gene-set sensitivity analysis. Supports the analysis
-    reported in the associated manuscript, submitted to npj Systems Biology
-    and Applications.
+    person("Masudul", "Haque", email = "masud.biochem.cu@gmail.com",
+           role = c("aut", "cre"))
+Description: Reproducible computational workflow for identifying an
+    interferon-activated classical-monocyte state in idiopathic normal
+    pressure hydrocephalus (iNPH), deriving a 300-gene pseudobulk
+    transcriptional signature, contextualizing that state against systemic
+    lupus erythematosus, and prioritizing candidate compounds using LINCS
+    L1000 transcriptional connectivity scoring. The project also includes
+    leave-one-patient-out robustness analysis, a non-overlapping MSigDB
+    Hallmark interferon-alpha pathway sensitivity analysis, figure
+    generation, manuscript-number auditing, and table verification. The
+    downstream analysis begins from a released canonical 22,197-cell iNPH
+    classical-monocyte object together with documented public and external
+    data resources.
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
 Depends:
@@ -42,10 +44,10 @@ Imports:
     Matrix,
     SingleCellExperiment,
     SummarizedExperiment,
+    S4Vectors,
     scuttle,
     tibble,
     AnnotationDbi,
-    BiocManager,
     BiocParallel,
     org.Hs.eg.db,
     ggrepel,
@@ -56,3 +58,7 @@ Imports:
     GEOquery,
     zellkonverter,
     readxl
+Suggests:
+    renv
+URL: https://github.com/KNU-BIST/iNPH-drug-repurposing
+BugReports: https://github.com/KNU-BIST/iNPH-drug-repurposing/issues

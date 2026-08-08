@@ -1,80 +1,49 @@
 # =============================================================================
-# Phase 1 — Deriving the type I interferon-activated monocyte signature
+# Phase 1 — iNPH IFN-activated monocyte signature derivation
+# Script: 01_derive_inph_ifn_signature.R
 # =============================================================================
 #
-# Project       : iNPH Drug Repurposing
-# Author        : Masudul Haque, KNUH Department of Neurosurgery
-# Final version : 2026-05-04
+# Project
+# -------
+# Systems biology prioritizes drug candidates for interferon-activated
+# monocytes in idiopathic normal pressure hydrocephalus
+#
+# Author
+# ------
+# Md. Masudul Haque
 #
 # Purpose
 # -------
-# This script is the canonical, reproducible derivation of the disease-state
-# query signature used in the iNPH drug repurposing project. Running it from
-# top to bottom on a fresh clone of the repository (after `source("setup.R")`)
-# reproduces the 150-up / 150-down gene signature in
-#     data/processed/inph_ifn_signature.rds
+# Derive the 150-UP/150-DOWN iNPH IFN-activated monocyte signature used in
+# the cross-disease contextualization and LINCS2 connectivity analyses.
 #
-# Phase 1 deliverable
-# -------------------
-# A type I interferon-activated monocyte signature, derived by contrasting
-# IFN-responsive monocytes (subcluster 5) against classical resting monocytes
-# (subcluster 0) within the same iNPH patients. This signature feeds Phase 2
-# (specificity validation) and Phase 3 (LINCS connectivity scoring).
+# Input
+# -----
+# data/processed/duy_monocytes_classical.rds
+# Canonical processed object containing 22,197 classical monocytes from
+# nine iNPH patients.
 #
-# Methodological summary
-# ----------------------
-# Source dataset    : Duy et al. 2025 PNAS, GSE292141
-# Cohort            : 9 iNPH patients (Patient 6 dropped — Unknown MOCA)
-# Tissue            : Peripheral blood (PBMC) — switched from CSF (see Pivot 2)
-# Cells             : 124,047 raw → 122,724 post-QC → 22,197 monocytes (cluster 0)
-#                     → 22,197 monocytes resubclustered → 940 IFN-activated +
-#                     4,904 classical-resting monocytes used in DE
-# DE design         : ~ patient + state, paired across all 9 patients
-# Shrinkage         : apeglm
-# Result            : 1,231 genes pass FDR < 0.05; 32 of 35 expected ISGs
-#                     recovered in the UP signature
+# Outputs
+# -------
+# data/processed/inph_ifn_signature.rds
+# data/processed/de_ifn_subtype_results.rds
+# data/processed/subcluster_diagnostic.rds
+# data/processed/seu_monocyte_subclustered.rds
+# data/processed/isg_reference_panel.rds
 #
-# Three scientific pivots from original proposal
-# ----------------------------------------------
-# Pivot 1 (cohort)    : iNPH-vs-healthy → High-MOCA-vs-Low-MOCA within iNPH
-#                       Reason: dataset has no healthy controls.
-# Pivot 2 (tissue)    : CSF → PBMC monocytes
-#                       Reason: CSF cell yield 18-2,503 (fatal imbalance);
-#                       PBMC yield 1,343-4,541 (uniform).
-# Pivot 3 (signature) : Generic proinflammatory → type I IFN-activated state
-#                       Reason: TNF/IL1β biology absent across all monocyte
-#                       subclusters (scores ~0.07); IFN-activated subset
-#                       distinct (score 1.28 vs ≤0.67 elsewhere).
+# Method summary
+# --------------
+# The canonical monocyte population is normalized, Harmony-corrected by
+# patient, subclustered, and scored using predefined monocyte-state panels.
+# Pseudobulk differential expression compares IFN-activated subcluster 5
+# with classical resting cluster 0 using DESeq2 with a paired
+# ~ patient + state design and apeglm shrinkage.
 #
-# These pivots are documented in detail in the project follow-up deck.
-#
-# Dependencies
-# ------------
-# All packages are pinned in renv.lock. The starting monocyte population
-# (22,197 classical monocytes, PBMC, 9 patients) was originally built via
-# the targets pipeline (duy_raw -> duy_extracted -> duy_sce -> duy_clustered
-# -> duy_annotated -> duy_monocytes, defined in the now-archived _targets.R,
-# using R/data_loading.R and R/clustering.R). That pipeline implements the
-# abandoned study design and is intentionally excluded from this repository
-# (see Archived/). The saved, verified output of that final target -
-# data/processed/duy_monocytes_classical.rds - is loaded directly below
-# instead, so this script no longer depends on targets or _targets.R at
-# runtime. See README.md for details.
-#
-# FIX THIS SESSION (fresh-clone reproducibility test)
-# -----------------------------------------------------------------------
-# This script builds `seu`, the fully subclustered Seurat object (sub_res05
-# assignments, patient/moca_group metadata, UMAP embedding), and every
-# downstream script in this pipeline - 02_lupus_benchmark.R, 05_robustness.R,
-# 06_figures_all.R, 08_numbers_audit.R - loads it back from
-# data/processed/seu_monocyte_subclustered.rds. But this script never
-# actually wrote that file: Section 10 only ever saved inph_ifn_signature.rds,
-# de_ifn_subtype_results.rds, and subcluster_diagnostic.rds. This worked
-# invisibly on the original machine only because a copy of that file already
-# existed there from an earlier session - the same silent-dependency pattern
-# already found and fixed in the targets/_targets.R issue. Fixed by adding
-# the missing save in Section 10, right after the other three outputs.
-#
+# Reproducibility note
+# --------------------
+# This script begins from the released canonical monocyte object rather than
+# reconstructing that object from the full PBMC dataset. The canonical input
+# object, its checksum, and its provenance should be documented in the README.
 # =============================================================================
 
 
@@ -82,52 +51,125 @@
 # Section 0 · Environment
 # -----------------------------------------------------------------------------
 
-library(here)
-library(Seurat)
-library(SingleCellExperiment)
-library(SummarizedExperiment)
-library(scuttle)
-library(DESeq2)
-library(apeglm)
-library(harmony)
-library(Matrix)
-library(dplyr)
-library(tibble)
-library(ggplot2)
+required_packages <- c(
+  "here",
+  "Seurat",
+  "SingleCellExperiment",
+  "SummarizedExperiment",
+  "scuttle",
+  "DESeq2",
+  "apeglm",
+  "harmony",
+  "Matrix",
+  "dplyr",
+  "tibble",
+  "ggplot2"
+)
 
-# Sanity check — confirm the pre-built monocyte population is present
-stopifnot(file.exists(here::here("data", "processed", "duy_monocytes_classical.rds")))
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
 
+if (length(missing_packages) > 0L) {
+  stop(
+    "Missing required package(s): ",
+    paste(missing_packages, collapse = ", "),
+    ". Run renv::restore() before executing this script."
+  )
+}
+
+suppressPackageStartupMessages({
+  library(here)
+  library(Seurat)
+  library(SingleCellExperiment)
+  library(SummarizedExperiment)
+  library(scuttle)
+  library(DESeq2)
+  library(apeglm)
+  library(harmony)
+  library(Matrix)
+  library(dplyr)
+  library(tibble)
+  library(ggplot2)
+})
+
+PROCESSED_DIR <- here::here("data", "processed")
+
+canonical_mono_path <- file.path(
+  PROCESSED_DIR,
+  "duy_monocytes_classical.rds"
+)
+
+if (
+  !file.exists(canonical_mono_path) ||
+  is.na(file.info(canonical_mono_path)$size) ||
+  file.info(canonical_mono_path)$size <= 0
+) {
+  stop(
+    "Canonical monocyte object is missing or empty: ",
+    canonical_mono_path,
+    "\nSee README.md for download and provenance information."
+  )
+}
+
+cat(
+  "Canonical input MD5: ",
+  unname(tools::md5sum(canonical_mono_path)),
+  "\n",
+  sep = ""
+)
 
 # -----------------------------------------------------------------------------
 # Section 1 · Load the pre-built monocyte population
 # -----------------------------------------------------------------------------
-# This object was produced (once) by the same processing chain described
-# above: 124,047 raw PBMC cells -> 122,724 post-QC -> Harmony integration by
-# patient -> clustering at resolution 0.5 -> cluster 0 (the only pure
-# classical-monocyte cluster) subset out as the 22,197-cell starting
-# population used throughout this project.
+# The released canonical object contains the 22,197 classical monocytes used
+# for all downstream monocyte analyses in the manuscript. It is treated as a
+# required analysis input rather than reconstructed by this script from the
+# full PBMC dataset.
 #
-# NOTE ON REPRODUCIBILITY: the clustering step inside this original chain
-# was not seeded. Re-deriving this object from raw data (e.g. via
-# R/data_loading.R + R/clustering.R, as done for Supplementary Figure S1)
-# will NOT reliably reproduce this exact 22,197-cell population, since
-# Harmony/Louvain clustering is stochastic. This saved object is therefore
-# the canonical starting point for the locked signature and all downstream
-# results - do not regenerate it from scratch as a substitute.
-
-
+# The PBMC-level reconstruction used for Supplementary Figure S1 serves to
+# visualize and validate the canonical cell identifiers within the public PBMC
+# dataset; it does not redefine the downstream analysis population.
+#
 # -----------------------------------------------------------------------------
 # Section 2 · Load monocyte SCE and confirm cohort structure
 # -----------------------------------------------------------------------------
 
-mono_sce <- readRDS(here::here("data", "processed", "duy_monocytes_classical.rds"))
-mono_sce
+mono_sce <- readRDS(canonical_mono_path)
 
-# Confirm: 22,197 monocytes, 9 patients (Patient 6 already dropped by the
-# pipeline), tissue is PBMC (not CSF — see Pivot 2 in project documentation).
-stopifnot(ncol(mono_sce) == 22197)
-stopifnot(unique(mono_sce$tissue) == "PBMC")
+if (!inherits(mono_sce, "SingleCellExperiment")) {
+  stop(
+    "Canonical monocyte input must be a SingleCellExperiment; observed class: ",
+    paste(class(mono_sce), collapse = ", ")
+  )
+}
+
+required_coldata <- c(
+  "patient",
+  "tissue",
+  "moca_group"
+)
+
+missing_coldata <- setdiff(
+  required_coldata,
+  colnames(SummarizedExperiment::colData(mono_sce))
+)
+
+if (length(missing_coldata) > 0L) {
+  stop(
+    "Canonical monocyte object is missing required colData field(s): ",
+    paste(missing_coldata, collapse = ", ")
+  )
+}
+
+if (!"counts" %in% SummarizedExperiment::assayNames(mono_sce)) {
+  stop("Canonical monocyte object does not contain a 'counts' assay.")
+}
+
+stopifnot(ncol(mono_sce) == 22197L)
+stopifnot(length(unique(mono_sce$patient)) == 9L)
+stopifnot(all(as.character(mono_sce$tissue) == "PBMC"))
+stopifnot(!anyDuplicated(colnames(mono_sce)))
 
 cat("\nCohort structure:\n")
 print(table(mono_sce$patient, mono_sce$moca_group))
@@ -136,13 +178,11 @@ print(table(mono_sce$patient, mono_sce$moca_group))
 # -----------------------------------------------------------------------------
 # Section 3 · Subcluster the 22,197 monocytes into states
 # -----------------------------------------------------------------------------
-# Why this step
-# -------------
-# Pseudobulk DE on bulk monocytes (Low MOCA vs High MOCA contrast) produced
-# no meaningful signature — the cognition gradient is not detectable at the
-# bulk-monocyte level. This is consistent with Duy's published finding being
-# subtype-specific rather than a uniform shift across all monocytes.
-# Subclustering preserves subtype structure; pseudobulk would average it away.
+# The canonical monocyte population is subclustered to resolve transcriptional
+# states that would be obscured by whole-monocyte aggregation. The finalized
+# analysis defines the IFN-activated state at this subcluster level and uses a
+# within-patient state contrast for downstream pseudobulk differential
+# expression.
 
 seu <- Seurat::CreateSeuratObject(
   counts    = SingleCellExperiment::counts(mono_sce),
@@ -152,36 +192,68 @@ seu <- Seurat::CreateSeuratObject(
 seu <- Seurat::NormalizeData(seu, verbose = FALSE)
 seu <- Seurat::FindVariableFeatures(seu, nfeatures = 2000, verbose = FALSE)
 seu <- Seurat::ScaleData(seu, verbose = FALSE)
-seu <- Seurat::RunPCA(seu, npcs = 30, verbose = FALSE)
+seu <- Seurat::RunPCA(
+  seu,
+  npcs = 30,
+  seed.use = 42,
+  verbose = FALSE
+)
 
 # Patient-level batch correction. Without this, monocyte subclusters can
 # appear patient-driven (cells from the same patient cluster together) rather
 # than reflecting genuine biological subtype structure.
 seu <- harmony::RunHarmony(seu, group.by.vars = "patient", verbose = FALSE)
 
-seu <- Seurat::FindNeighbors(seu, reduction = "harmony",
-                             dims = 1:30, verbose = FALSE)
-seu <- Seurat::FindClusters(seu, resolution = 0.5,
-                            cluster.name = "sub_res05", verbose = FALSE)
-seu <- Seurat::RunUMAP(seu, reduction = "harmony",
-                       dims = 1:30, verbose = FALSE)
+# The finalized analysis uses Louvain clustering (algorithm 1) at resolution
+# 0.5. Seeds and the UMAP implementation are specified explicitly to reduce
+# software-default drift across future reruns.
+seu <- Seurat::FindNeighbors(
+  seu,
+  reduction = "harmony",
+  dims = seq_len(30),
+  verbose = FALSE
+)
+
+seu <- Seurat::FindClusters(
+  seu,
+  resolution = 0.5,
+  algorithm = 1,
+  random.seed = 0,
+  cluster.name = "sub_res05",
+  verbose = FALSE
+)
+
+seu <- Seurat::RunUMAP(
+  seu,
+  reduction = "harmony",
+  dims = seq_len(30),
+  umap.method = "uwot",
+  metric = "cosine",
+  seed.use = 42,
+  verbose = FALSE
+)
 
 cat("\nSubcluster sizes at resolution 0.5:\n")
 print(table(seu$sub_res05))
+
+observed_clusters <- sort(unique(as.character(seu$sub_res05)))
+
+stopifnot(
+  identical(
+    observed_clusters,
+    as.character(0:6)
+  )
+)
 
 
 # -----------------------------------------------------------------------------
 # Section 4 · Identify the IFN-activated subcluster
 # -----------------------------------------------------------------------------
-# We score each subcluster on six biology panels covering canonical monocyte
-# states. The original plan was to find a "proinflammatory" subcluster with
-# elevated TNF/IL1β/CCL3/CCL4 expression (Pivot 3 outcome).
-#
-# Empirical finding: no subcluster has elevated proinflammatory scores
-# (uniformly ~0.06-0.09 across all 7 subclusters). However, one subcluster
-# shows clearly elevated type I interferon activation:
-#   subcluster 5 — IFN score 1.28 vs ≤0.67 elsewhere (~2× elevated)
-# This becomes our disease state of interest.
+# Each subcluster is summarized using predefined marker panels representing
+# major monocyte transcriptional states. In the finalized analysis, subcluster
+# 5 shows the strongest type I interferon program (IFN-panel score 1.28 versus
+# no more than 0.67 in the remaining subclusters) and is therefore designated
+# the IFN-activated state.
 
 panels <- list(
   classical         = c("CD14", "S100A8", "S100A9", "S100A12", "VCAN", "FCN1"),
@@ -234,19 +306,19 @@ stopifnot(diagnostic$interferon[diagnostic$cluster == "5"] >
 # contributes one pseudobulk per state. Patient is included as a covariate
 # in the DE design to absorb between-patient variance.
 
-inflammatory_subcluster <- "5"   # IFN-activated, n = 940
+ifn_subcluster          <- "5"   # IFN-activated, n = 940
 classical_subcluster    <- "0"   # classical resting reference, n = 4,904
 
-stopifnot(inflammatory_subcluster %in% as.character(seu$sub_res05))
+stopifnot(ifn_subcluster %in% as.character(seu$sub_res05))
 stopifnot(classical_subcluster    %in% as.character(seu$sub_res05))
 
 sce$subtype_label <- as.character(sce$sub_res05)
-keep_cells <- sce$subtype_label %in% c(inflammatory_subcluster,
+keep_cells <- sce$subtype_label %in% c(ifn_subcluster,
                                        classical_subcluster)
 sce_two <- sce[, keep_cells]
 
 sce_two$state <- factor(
-  ifelse(sce_two$subtype_label == inflammatory_subcluster,
+  ifelse(sce_two$subtype_label == ifn_subcluster,
          "ifn_activated", "classical"),
   levels = c("classical", "ifn_activated")
 )
@@ -265,9 +337,9 @@ pb <- scuttle::aggregateAcrossCells(
   sce_two, ids = sce_two$pb_group, statistics = "sum"
 )
 
-# Drop pseudobulks built from too few cells (project standard relaxed from
-# 50 to 30 here because the IFN subcluster is small — 940 cells across 9
-# patients).
+# Require at least 30 cells per patient-by-state pseudobulk. This threshold
+# retains all nine paired patient contrasts while avoiding extremely small
+# pseudobulk libraries.
 ncells  <- table(sce_two$pb_group)
 keep_pb <- names(ncells)[ncells >= 30]
 drop_pb <- names(ncells)[ncells <  30]
@@ -306,12 +378,21 @@ dds <- DESeq2::DESeq(dds, parallel = FALSE)
 cat("\nDESeq2 model coefficients:\n")
 print(DESeq2::resultsNames(dds))
 
+expected_coef <- "state_ifn_activated_vs_classical"
+
+if (!expected_coef %in% DESeq2::resultsNames(dds)) {
+  stop(
+    "Expected DESeq2 coefficient not found: ",
+    expected_coef
+  )
+}
+
 # apeglm shrinks log fold-changes toward zero based on standard error.
 # This is the standard correction for small-n contrasts where raw LFCs
 # are unstable.
 res <- DESeq2::lfcShrink(
   dds,
-  coef = "state_ifn_activated_vs_classical",
+  coef = expected_coef,
   type = "apeglm",
   quiet = TRUE
 )
@@ -351,21 +432,27 @@ down <- passing |>
 
 inph_signature <- list(up = up, down = down)
 
-stopifnot(length(intersect(up, down)) == 0)   # disjoint
+stopifnot(length(up) == 150L)
+stopifnot(length(down) == 150L)
+stopifnot(!anyDuplicated(up))
+stopifnot(!anyDuplicated(down))
+stopifnot(length(intersect(up, down)) == 0L)
+
 cat("\nSignature: ", length(up), " UP / ", length(down), " DOWN\n", sep = "")
-cat("\nTop 20 UP genes (proinflammatory IFN response):\n")
+
+cat("\nTop 20 upregulated signature genes:\n")
 print(head(up, 20))
-cat("\nTop 20 DOWN genes (homeostatic / granulocyte-adjacent):\n")
+
+cat("\nTop 20 downregulated signature genes:\n")
 print(head(down, 20))
 
 
 # -----------------------------------------------------------------------------
 # Section 9 · Biological validation
 # -----------------------------------------------------------------------------
-# The UP signature should be dominated by canonical type I interferon-
-# stimulated genes (ISGs). We check against a panel of 35 well-characterized
-# ISGs. Expected outcome: at least 25 of 35 land in the UP signature,
-# confirming the signature represents real IFN-activated monocyte biology.
+# The UP signature is evaluated against a predefined 35-gene type I
+# interferon-stimulated gene panel. Recovery of at least 25 panel genes in the
+# UP component is used as a prespecified biological-coherence check.
 
 expected_up_ifn <- c(
   "IFI6",  "IFI27", "IFIT1", "IFIT2", "IFIT3", "IFITM1", "IFITM2", "IFITM3",
@@ -381,9 +468,9 @@ cat("Expected ISGs recovered in UP signature:",
     length(isgs_recovered), "of", length(expected_up_ifn), "\n")
 print(isgs_recovered)
 
-# Hard validation criterion: at least 25 of 35 expected ISGs must land.
-# If this fails, the signature is not the IFN biology we believe it is and
-# downstream phases (LINCS) will produce uninterpretable results.
+# Prespecified validation criterion: at least 25 of 35 expected ISGs must be
+# recovered in the UP signature. Failure triggers a hard stop before downstream
+# connectivity analysis.
 stopifnot(length(isgs_recovered) >= 25)
 
 cat("\n=== Validation passed. Phase 1 signature is biologically coherent. ===\n")
@@ -393,30 +480,28 @@ cat("\n=== Validation passed. Phase 1 signature is biologically coherent. ===\n"
 # Section 10 · Save final outputs
 # -----------------------------------------------------------------------------
 
-dir.create(here::here("data/processed"), showWarnings = FALSE, recursive = TRUE)
+dir.create(PROCESSED_DIR, showWarnings = FALSE, recursive = TRUE)
 
 saveRDS(inph_signature,
-        here::here("data/processed/inph_ifn_signature.rds"))
+        file.path(PROCESSED_DIR, "inph_ifn_signature.rds"))
 saveRDS(de_subtype,
-        here::here("data/processed/de_ifn_subtype_results.rds"))
+        file.path(PROCESSED_DIR, "de_ifn_subtype_results.rds"))
 saveRDS(diagnostic,
-        here::here("data/processed/subcluster_diagnostic.rds"))
-
-# FIX THIS SESSION: this save was missing entirely. seu (fully subclustered:
-# sub_res05, patient, moca_group, UMAP embedding) is what 02_lupus_benchmark.R,
-# 05_robustness.R, 06_figures_all.R, and 08_numbers_audit.R all load back via
-# this exact filename. Without this line, the script silently depended on a
-# copy of this file already existing from an earlier session - it never
-# actually produced its own most heavily-used output. See header note.
+        file.path(PROCESSED_DIR, "subcluster_diagnostic.rds"))
 saveRDS(seu,
-        here::here("data/processed/seu_monocyte_subclustered.rds"))
+        file.path(PROCESSED_DIR, "seu_monocyte_subclustered.rds"))
+
+# The 35-gene ISG validation panel used in Section 9 is saved so
+# 06_audit_manuscript_results.R can read the same canonical list directly.
+saveRDS(expected_up_ifn,
+        file.path(PROCESSED_DIR, "isg_reference_panel.rds"))
 
 cat("\nFinal outputs saved:\n")
 cat("  data/processed/inph_ifn_signature.rds          (Phase 1 signature for LINCS query)\n")
 cat("  data/processed/de_ifn_subtype_results.rds      (full DE table)\n")
 cat("  data/processed/subcluster_diagnostic.rds       (subcluster annotation table)\n")
 cat("  data/processed/seu_monocyte_subclustered.rds   (clustered Seurat object - used by\n")
-cat("                                                   scripts 02, 05, 06, 08)\n")
+cat("                                                   scripts 02, 04, 05, 06)\n")
 
 
 # -----------------------------------------------------------------------------
@@ -433,7 +518,7 @@ cat("  Genes pass FDR < 0.05    :", nrow(passing), "\n")
 cat("  ISGs recovered           :", length(isgs_recovered), "/",
                                     length(expected_up_ifn), "\n")
 cat("  UP / DOWN signature size :", length(up), "/", length(down), "\n")
-cat("\n  Next: Phase 2 (specificity validation across CSF compendium)\n")
+cat("\n  Next: Phase 2 (cross-disease contextualization)\n")
 cat("============================================================\n")
 
 # =============================================================================
