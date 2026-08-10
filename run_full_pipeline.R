@@ -22,8 +22,9 @@
 # -----
 # - Verifies that all canonical analysis scripts and helper files exist.
 # - Verifies all staged external inputs required by the finalized workflow.
-# - In strict mode, requires data/processed/ to contain only the released
-#   canonical duy_monocytes_classical.rds input before execution.
+# - In strict mode, requires data/processed/ to be empty (or absent) before
+#   execution; Script 00 reconstructs the canonical 22,197-cell monocyte input
+#   from public GSE292141 raw counts plus the version-controlled cell manifest.
 # - Parses every canonical R script before starting the expensive computation,
 #   so syntax errors are detected immediately.
 # - Runs each analysis script in a separate R process, preventing objects,
@@ -37,6 +38,7 @@
 #
 # Canonical analysis scripts
 # --------------------------
+# 00_prepare_canonical_monocyte_input.R
 # 01_derive_inph_ifn_signature.R
 # 02_cross_disease_contextualization.R
 # 03_run_lincs2_connectivity.R
@@ -139,6 +141,14 @@ PROJECT_ROOT <- if (!is.null(RUNNER_PATH)) {
 PIPELINE_STEPS <- list(
 
   list(
+    label = "Canonical monocyte input reconstruction",
+    script = "00_prepare_canonical_monocyte_input.R",
+    expected_outputs = c(
+      "data/processed/duy_monocytes_classical.rds"
+    )
+  ),
+
+  list(
     label = "iNPH IFN signature derivation",
     script = "01_derive_inph_ifn_signature.R",
     expected_outputs = c(
@@ -239,7 +249,8 @@ HELPER_FILES <- c(
 # triplets to be staged in advance so the test is not confounded by network
 # availability during the expensive pipeline run.
 CORE_REQUIRED_INPUTS <- c(
-  "data/processed/duy_monocytes_classical.rds",
+  "data/canonical/duy_classical_monocyte_cell_manifest.tsv",
+  "data/canonical/duy_classical_monocyte_manifest_provenance.txt",
   "data/raw/perez2022_lupus/4118e166-34f5-4c1f-9eed-c64b90a3dace.h5ad",
   "data/raw/GSE70138_Broad_LINCS_pert_info.txt.gz",
   "data/raw/compoundinfo_beta.txt"
@@ -694,6 +705,19 @@ run_full_pipeline <- function(
   }
 
 
+  if (file.exists(project_path(".Renviron"))) {
+    cat(
+      ".Renviron: found\n"
+    )
+  } else {
+    cat(
+      "NOTE: .Renviron was not found. The project can still use renv, but the ",
+      "repository's preferred project-local renv/library path is not pinned.\n",
+      sep = ""
+    )
+  }
+
+
   if (
     file.exists(project_path("renv.lock")) &&
     requireNamespace("renv", quietly = TRUE)
@@ -934,7 +958,7 @@ run_full_pipeline <- function(
 
 
   # ---------------------------------------------------------------------------
-  # PRE-FLIGHT: required non-automated inputs
+  # PRE-FLIGHT: required canonical, raw, and external inputs
   # ---------------------------------------------------------------------------
 
   missing_inputs <- REQUIRED_INPUTS[
@@ -962,15 +986,17 @@ run_full_pipeline <- function(
     )
 
     cat(
-      "Stage the canonical 22,197-cell monocyte object, the Perez comparator ",
-      "h5ad, the GSE70138 perturbation metadata, compoundinfo_beta.txt, and ",
-      "all 20 GSE292141 GSM triplets (60 files) before the strict fresh-clone ",
-      "run. See README.md for the documented input locations.\n",
+      "Stage the version-controlled canonical cell manifest/provenance, the ",
+      "Perez comparator h5ad, the GSE70138 perturbation metadata, ",
+      "compoundinfo_beta.txt, and all 20 GSE292141 GSM triplets (60 files) ",
+      "before the strict fresh-clone run. Script 00 reconstructs the 22,197-cell ",
+      "canonical monocyte object during the pipeline. See README.md for the ",
+      "documented input locations.\n",
       sep = ""
     )
 
     stop(
-      "Pre-flight failed because required non-automated inputs are missing."
+      "Pre-flight failed because required canonical/raw/external inputs are missing."
     )
   }
 
@@ -1040,8 +1066,6 @@ run_full_pipeline <- function(
 
   if (require_fresh_outputs) {
 
-    allowed_processed_basename <- "duy_monocytes_classical.rds"
-
     processed_dir <- project_path(
       "data",
       "processed"
@@ -1050,30 +1074,26 @@ run_full_pipeline <- function(
     if (dir.exists(processed_dir)) {
       processed_entries <- list.files(
         processed_dir,
-        all.files = FALSE,
+        all.files = TRUE,
         full.names = FALSE,
         recursive = FALSE
       )
-
-      unexpected_processed <- setdiff(
-        processed_entries,
-        allowed_processed_basename
-      )
+  processed_entries <- setdiff(processed_entries, c(".", "..", ".gitkeep"))
     } else {
-      unexpected_processed <- character(0)
+      processed_entries <- character(0)
     }
 
-    if (length(unexpected_processed) > 0L) {
+    if (length(processed_entries) > 0L) {
       cat(
-        "\nFAILED: strict fresh-clone mode found generated file(s) already ",
-        "present in data/processed/:\n",
+        "\nFAILED: strict fresh-clone mode found file(s) already present ",
+        "in data/processed/:\n",
         sep = ""
       )
 
       cat(
         paste0(
           "  - data/processed/",
-          unexpected_processed,
+          processed_entries,
           collapse = "\n"
         ),
         "\n\n",
@@ -1081,8 +1101,10 @@ run_full_pipeline <- function(
       )
 
       cat(
-        "For the strict reproducibility test, data/processed/ must contain ",
-        "only duy_monocytes_classical.rds before the pipeline starts.\n",
+        "For the strict reproducibility test, data/processed/ must be empty ",
+        "before the pipeline starts. Script 00 will reconstruct ",
+        "duy_monocytes_classical.rds from the public GSE292141 matrices and ",
+        "the canonical manifest.\n",
         sep = ""
       )
 
@@ -1092,8 +1114,7 @@ run_full_pipeline <- function(
     }
 
     cat(
-      "Strict fresh-clone processed state: PASS ",
-      "(only duy_monocytes_classical.rds is present)\n",
+      "Strict fresh-clone processed state: PASS (empty or absent)\n",
       sep = ""
     )
   }
@@ -1300,7 +1321,15 @@ run_full_pipeline <- function(
         args = shQuote(wrapper_path),
         stdout = step_log,
         stderr = step_log,
-        wait = TRUE
+        wait = TRUE,
+        env = if (
+          identical(script_name, "00_prepare_canonical_monocyte_input.R") &&
+            !require_fresh_outputs
+        ) {
+          "INPH_OVERWRITE_CANONICAL_RDS=1"
+        } else {
+          character(0)
+        }
       ),
       error = function(e) {
 

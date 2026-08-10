@@ -21,7 +21,9 @@
 # -----
 # data/processed/duy_monocytes_classical.rds
 # Canonical processed object containing 22,197 classical monocytes from
-# nine iNPH patients.
+# nine iNPH patients, reconstructed by
+# 00_prepare_canonical_monocyte_input.R from public GSE292141 raw counts
+# and the version-controlled canonical cell-membership manifest.
 #
 # Outputs
 # -------
@@ -41,9 +43,11 @@
 #
 # Reproducibility note
 # --------------------
-# This script begins from the released canonical monocyte object rather than
-# reconstructing that object from the full PBMC dataset. The canonical input
-# object, its checksum, and its provenance should be documented in the README.
+# This script consumes the canonical monocyte object produced by Script 00.
+# Script 00 reconstructs the exact locked historical cell membership and order
+# from public GSE292141 raw count matrices using the version-controlled manifest.
+# It does not independently rediscover the original stochastic PBMC cluster
+# selection; that historical membership is intentionally frozen by the manifest.
 # =============================================================================
 
 
@@ -108,7 +112,7 @@ if (
   stop(
     "Canonical monocyte object is missing or empty: ",
     canonical_mono_path,
-    "\nSee README.md for download and provenance information."
+    "\nRun analysis/00_prepare_canonical_monocyte_input.R first (or use run_full_pipeline.R)."
   )
 }
 
@@ -120,18 +124,22 @@ cat(
 )
 
 # -----------------------------------------------------------------------------
-# Section 1 · Load the pre-built monocyte population
+# Section 1 · Load the reconstructed canonical monocyte population
 # -----------------------------------------------------------------------------
-# The released canonical object contains the 22,197 classical monocytes used
-# for all downstream monocyte analyses in the manuscript. It is treated as a
-# required analysis input rather than reconstructed by this script from the
-# full PBMC dataset.
+# The 22,197-cell population is produced by Script 00 from the public GSE292141
+# PBMC raw count matrices and the version-controlled canonical cell-membership
+# manifest.
 #
-# The PBMC-level reconstruction used for Supplementary Figure S1 serves to
-# visualize and validate the canonical cell identifiers within the public PBMC
-# dataset; it does not redefine the downstream analysis population.
+# The manifest preserves the exact historical cell membership and order used in
+# the original analysis. This is deliberately different from claiming that the
+# original stochastic Harmony/clustering-based monocyte-selection step can be
+# independently rediscovered exactly. Script 01 therefore begins from the
+# reconstructed, locked analysis population and performs all downstream
+# normalization, subclustering, differential expression, and signature
+# derivation from that object.
 #
 # -----------------------------------------------------------------------------
+
 # Section 2 · Load monocyte SCE and confirm cohort structure
 # -----------------------------------------------------------------------------
 

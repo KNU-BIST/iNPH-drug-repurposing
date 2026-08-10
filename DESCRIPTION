@@ -14,9 +14,10 @@ Description: Reproducible computational workflow for identifying an
     leave-one-patient-out robustness analysis, a non-overlapping MSigDB
     Hallmark interferon-alpha pathway sensitivity analysis, figure
     generation, manuscript-number auditing, and table verification. The
-    downstream analysis begins from a released canonical 22,197-cell iNPH
-    classical-monocyte object together with documented public and external
-    data resources.
+    canonical 22,197-cell iNPH classical-monocyte analysis population is
+    reconstructed from public GSE292141 raw count matrices using a
+    version-controlled cell-membership manifest, together with documented
+    public and external data resources.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

@@ -58,7 +58,11 @@ secrets/
 # R package build artefacts
 *.tar.gz
 *.Rcheck/
-.Renviron
 # Internal archive - superseded scripts/data, kept locally only
 Archived/
 .positai
+
+# Reproducibility run logs
+/logs/
+/full_pipeline*.log
+/preflight*.log

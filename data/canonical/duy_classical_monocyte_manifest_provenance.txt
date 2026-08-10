@@ -1,0 +1,25 @@
+iNPH canonical classical-monocyte manifest provenance
+=====================================================
+
+manifest_file=duy_classical_monocyte_cell_manifest.tsv
+manifest_md5=28417a6aa7efd1dd8fdd6f67c09e7be4
+source_legacy_rds=duy_monocytes_classical.rds
+source_legacy_rds_md5=5ab87562a5b244dfee63ca85c9402ac3
+n_genes=36601
+n_cells=22197
+n_patients=9
+tissue=PBMC
+
+Historical provenance:
+The locked population was defined in the original PBMC analysis after
+Patient 6 exclusion, historical QC (124,047 -> 122,724 PBMCs using
+nFeature_RNA >= 200 and percent mitochondrial <= 20), patient-level Harmony
+integration, and unsupervised clustering. The manuscript's classical-monocyte
+population was the historical monocyte cluster selected using canonical
+lineage-marker expression.
+
+Reproducibility boundary:
+This manifest preserves the exact historical cell membership and order.
+It does not independently re-run the original stochastic cluster-selection
+step. The reconstruction script recovers these cells from the public raw
+GSE292141 PBMC count matrices and verifies their critical metadata.
