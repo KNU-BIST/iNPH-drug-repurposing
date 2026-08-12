@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "Analysis code for Systems biology prioritizes drug candidates for interferon-activated monocytes in idiopathic normal pressure hydrocephalus"
+type: software
+version: 1.0.0
+date-released: 2026-08-12
+repository-code: "https://github.com/KNU-BIST/iNPH-drug-repurposing"
+
+authors:
+  - family-names: "Haque"
+    given-names: "Md. Masudul"
+    affiliation: "Daegu Gyeongbuk Institute of Science and Technology (DGIST)"
+    orcid: "https://orcid.org/0009-0001-1503-1470"
+
+  - family-names: "Nila"
+    given-names: "Irin Sultana"
+    affiliation: "Daegu Gyeongbuk Institute of Science and Technology (DGIST)"
+    orcid: "https://orcid.org/0000-0003-2792-2139"
+
+keywords:
+  - idiopathic normal pressure hydrocephalus
+  - single-cell RNA sequencing
+  - monocytes
+  - interferon-stimulated genes
+  - connectivity mapping
+
+license: "MIT"
