@@ -482,7 +482,35 @@ if (!identical(
   stop("Canonical reconstruction per-patient counts do not match the locked population.")
 }
 
+# Normalize loader-generated sample metadata.
+# The raw-data loader stores its temporary extraction directory in `Sample`
+# and `metadata()$Samples`. Replace those session-specific paths with stable
+# GEO accessions so repeated reconstructions produce deterministic metadata.
+stable_sample_ids <- unique(as.character(canonical$sample_id))
 
+canonical$Sample <- as.character(canonical$sample_id)
+
+canonical_metadata <- S4Vectors::metadata(canonical)
+canonical_metadata$Samples <- stable_sample_ids
+S4Vectors::metadata(canonical) <- canonical_metadata
+
+if (!identical(
+  as.character(canonical$Sample),
+  as.character(canonical$sample_id)
+)) {
+  stop("Failed to normalize the canonical Sample metadata.")
+}
+
+if (any(grepl("[/\\\\]", canonical$Sample))) {
+  stop("Canonical Sample metadata still contains filesystem paths.")
+}
+
+if (!identical(
+  S4Vectors::metadata(canonical)$Samples,
+  stable_sample_ids
+)) {
+  stop("Failed to normalize top-level Samples metadata.")
+}
 # -----------------------------------------------------------------------------
 # Section 7 · Save and read back the canonical processed object
 # -----------------------------------------------------------------------------
