@@ -19,6 +19,11 @@
 # 6. Patient 6 sensitivity: marker IFN-high vs marker IFN-low in the uniform
 #    ten-patient population.
 #
+# Primary signature-size queries use their exact fixed sizes. Other sensitivity
+# contrasts use a balanced FDR-significant signature of up to 150 genes per
+# direction, limited by the direction with fewer significant genes. A minimum
+# of 25 genes per direction is required for downstream connectivity analysis.
+#
 # Every DE model uses donor-level pseudobulk counts, a paired
 # ~ patient + state DESeq2 design, apeglm shrinkage, and a minimum of 30 cells
 # per patient-state pseudobulk. This script performs no LINCS query.
@@ -164,6 +169,7 @@ MIN_PSEUDOBULK_CELLS <- 30L
 FDR_THRESHOLD <- 0.05
 PRIMARY_SIGNATURE_SIZES <- c(50L, 100L, 150L, 200L)
 VARIANT_SIGNATURE_SIZE <- 150L
+MIN_VARIANT_SIGNATURE_SIZE <- 25L
 EXPECTED_CANONICAL_CELLS <- 22197L
 EXPECTED_UNIFORM_CELLS <- 24703L
 EXPECTED_CANONICAL_PATIENTS <- c(
@@ -185,7 +191,12 @@ jaccard_similarity <- function(a, b) {
   length(intersect(a, b)) / union_n
 }
 
-extract_signature <- function(de_table, signature_size) {
+extract_signature <- function(
+    de_table,
+    signature_size,
+    allow_balanced_reduction = FALSE,
+    minimum_size = signature_size
+) {
   passing <- de_table |>
     dplyr::filter(
       !is.na(padj),
@@ -193,26 +204,43 @@ extract_signature <- function(de_table, signature_size) {
       !is.na(log2FoldChange)
     )
 
-  up <- passing |>
+  available_up <- passing |>
     dplyr::filter(log2FoldChange > 0) |>
-    dplyr::arrange(dplyr::desc(log2FoldChange)) |>
-    dplyr::slice_head(n = signature_size) |>
-    dplyr::pull(gene)
+    dplyr::arrange(dplyr::desc(log2FoldChange))
 
-  down <- passing |>
+  available_down <- passing |>
     dplyr::filter(log2FoldChange < 0) |>
-    dplyr::arrange(log2FoldChange) |>
-    dplyr::slice_head(n = signature_size) |>
-    dplyr::pull(gene)
+    dplyr::arrange(log2FoldChange)
 
-  if (length(up) != signature_size ||
-      length(down) != signature_size) {
+  actual_size <- min(
+    signature_size,
+    nrow(available_up),
+    nrow(available_down)
+  )
+
+  if (!allow_balanced_reduction && actual_size != signature_size) {
     stop(
       "Could not extract ", signature_size,
-      " genes in each direction: observed ",
-      length(up), " UP and ", length(down), " DOWN."
+      " FDR-significant genes in each direction: observed ",
+      nrow(available_up), " UP and ", nrow(available_down), " DOWN."
     )
   }
+
+  if (actual_size < minimum_size) {
+    stop(
+      "Balanced signature would contain only ", actual_size,
+      " genes per direction, below the frozen minimum of ",
+      minimum_size, "."
+    )
+  }
+
+  up <- available_up |>
+    dplyr::slice_head(n = actual_size) |>
+    dplyr::pull(gene)
+
+  down <- available_down |>
+    dplyr::slice_head(n = actual_size) |>
+    dplyr::pull(gene)
 
   if (anyDuplicated(up) ||
       anyDuplicated(down) ||
@@ -220,7 +248,15 @@ extract_signature <- function(de_table, signature_size) {
     stop("Extracted signature is duplicated or not directionally disjoint.")
   }
 
-  list(up = up, down = down)
+  list(
+    up = up,
+    down = down,
+    requested_size = signature_size,
+    actual_size = actual_size,
+    available_fdr_up = nrow(available_up),
+    available_fdr_down = nrow(available_down),
+    balanced_reduction_used = actual_size < signature_size
+  )
 }
 
 # -----------------------------------------------------------------------------
@@ -406,9 +442,11 @@ run_paired_pseudobulk_de <- function(
     tibble::as_tibble() |>
     dplyr::arrange(padj)
 
-  signature_150 <- extract_signature(
+  signature_max150 <- extract_signature(
     de_table,
-    VARIANT_SIGNATURE_SIZE
+    VARIANT_SIGNATURE_SIZE,
+    allow_balanced_reduction = TRUE,
+    minimum_size = MIN_VARIANT_SIGNATURE_SIZE
   )
 
   donor_counts <- data.frame(
@@ -422,7 +460,7 @@ run_paired_pseudobulk_de <- function(
   list(
     contrast_id = contrast_id,
     de_table = de_table,
-    signature_150 = signature_150,
+    signature_max150 = signature_max150,
     donor_counts = donor_counts,
     n_patients = length(patient_ids),
     n_low_cells = sum(assignments$state == "low"),
@@ -802,11 +840,11 @@ if (primary_recomputed$n_fdr_significant !=
 }
 
 if (!identical(
-  primary_recomputed$signature_150$up,
+  primary_recomputed$signature_max150$up,
   primary_signature$up
 ) ||
     !identical(
-      primary_recomputed$signature_150$down,
+      primary_recomputed$signature_max150$down,
       primary_signature$down
     )) {
   stop(
@@ -828,7 +866,7 @@ add_signature <- function(
     query_id,
     family,
     source_contrast,
-    signature_size,
+    maximum_requested_size,
     signature,
     description,
     resolution,
@@ -842,7 +880,11 @@ add_signature <- function(
     query_id = query_id,
     family = family,
     source_contrast = source_contrast,
-    signature_size_per_direction = signature_size,
+    maximum_requested_size = maximum_requested_size,
+    signature_size_per_direction = length(signature$up),
+    available_fdr_up = signature$available_fdr_up,
+    available_fdr_down = signature$available_fdr_down,
+    balanced_reduction_used = signature$balanced_reduction_used,
     description = description,
     resolution = resolution,
     patient6_included = patient6_included,
@@ -856,7 +898,7 @@ for (signature_size in PRIMARY_SIGNATURE_SIZES) {
     query_id = query_id,
     family = "signature_size",
     source_contrast = "PRIMARY_C5_VS_C0",
-    signature_size = signature_size,
+    maximum_requested_size = signature_size,
     signature = extract_signature(
       primary_de_saved,
       signature_size
@@ -871,13 +913,13 @@ for (signature_size in PRIMARY_SIGNATURE_SIZES) {
 }
 
 variant_query_map <- c(
-  C5_ALLREST = "C5_ALLREST_150",
-  C5_MARKERLOW = "C5_MARKERLOW_150",
-  MARKER = "MARKER_150",
-  RES03_ALLREST = "RES03_ALLREST_150",
-  RES07_ALLREST = "RES07_ALLREST_150",
-  RES10_ALLREST = "RES10_ALLREST_150",
-  P6_INCLUDED_MARKER = "P6_INCLUDED_MARKER_150"
+  C5_ALLREST = "C5_ALLREST_MAX150",
+  C5_MARKERLOW = "C5_MARKERLOW_MAX150",
+  MARKER = "MARKER_MAX150",
+  RES03_ALLREST = "RES03_ALLREST_MAX150",
+  RES07_ALLREST = "RES07_ALLREST_MAX150",
+  RES10_ALLREST = "RES10_ALLREST_MAX150",
+  P6_INCLUDED_MARKER = "P6_INCLUDED_MARKER_MAX150"
 )
 
 for (source_contrast in names(variant_query_map)) {
@@ -888,8 +930,8 @@ for (source_contrast in names(variant_query_map)) {
     query_id = query_id,
     family = spec$family,
     source_contrast = source_contrast,
-    signature_size = VARIANT_SIGNATURE_SIZE,
-    signature = de_results[[source_contrast]]$signature_150,
+    maximum_requested_size = VARIANT_SIGNATURE_SIZE,
+    signature = de_results[[source_contrast]]$signature_max150,
     description = spec$description,
     resolution = spec$resolution,
     patient6_included = spec$patient6_included
@@ -936,6 +978,10 @@ summary_rows <- lapply(names(signatures), function(query_id) {
     low_cells_n = source_result$n_low_cells,
     fdr_significant_genes_n =
       source_result$n_fdr_significant,
+    available_fdr_up = metadata_row$available_fdr_up,
+    available_fdr_down = metadata_row$available_fdr_down,
+    maximum_requested_size = metadata_row$maximum_requested_size,
+    balanced_reduction_used = metadata_row$balanced_reduction_used,
     signature_up_n = length(signature$up),
     signature_down_n = length(signature$down),
     up_overlap_primary_n =
@@ -1011,11 +1057,11 @@ primary_reproduction <- list(
   fdr_significant_genes =
     primary_recomputed$n_fdr_significant,
   submitted_150_up_identical = identical(
-    primary_recomputed$signature_150$up,
+    primary_recomputed$signature_max150$up,
     primary_signature$up
   ),
   submitted_150_down_identical = identical(
-    primary_recomputed$signature_150$down,
+    primary_recomputed$signature_max150$down,
     primary_signature$down
   ),
   lfc_pearson = stats::cor(
@@ -1052,16 +1098,19 @@ result <- list(
     fdr_threshold = FDR_THRESHOLD,
     primary_signature_sizes =
       PRIMARY_SIGNATURE_SIZES,
-    variant_signature_size =
+    variant_maximum_signature_size =
       VARIANT_SIGNATURE_SIZE,
+    minimum_variant_signature_size =
+      MIN_VARIANT_SIGNATURE_SIZE,
     design = "~ patient + state",
     lfc_shrinkage = "apeglm",
     extraction_rule = paste(
       "FDR < 0.05; ranked separately by shrunken log2FC;",
-      "largest positive values for UP and most negative values for DOWN"
+      "primary sizes fixed; other contrasts balanced to the smaller",
+      "available direction, capped at 150 genes per direction"
     ),
     resolution_05_query_note = paste(
-      "C5_ALLREST_150 is also the resolution-0.5 all-rest query;",
+      "C5_ALLREST_MAX150 is also the resolution-0.5 all-rest query;",
       "it is not duplicated under a second query ID"
     )
   ),
