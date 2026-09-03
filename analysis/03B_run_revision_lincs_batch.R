@@ -698,23 +698,45 @@ run_locked_query <- function(query_id, reference_scope) {
 
   start_time <- Sys.time()
 
-  gess_result <- signatureSearch::gess_lincs(
-    qsig,
-    sortby = "NCS",
-    tau = FALSE,
-    ref_trts = ref_subset,
-    workers = 1
-  )
+  if (identical(reference_scope, "thp1_trt_cp_subset")) {
+    # Use the same LINCS scoring engine called internally by gess_lincs().
+    # This bypasses only its optional target-annotation join, which fails
+    # when the THP1-only result has no target-annotation records.
+    executed_query <- methods::slot(qsig, "query")
+
+    lincs_enrich <- getFromNamespace(
+      "lincsEnrich",
+      "signatureSearch"
+    )
+
+    result_table <- as.data.frame(lincs_enrich(
+      db_path = lincs2_path,
+      upset = executed_query$upset,
+      downset = executed_query$downset,
+      sortby = "NCS",
+      tau = FALSE,
+      ref_trts = ref_subset,
+      workers = 1
+    ))
+  } else {
+    gess_result <- signatureSearch::gess_lincs(
+      qsig,
+      sortby = "NCS",
+      tau = FALSE,
+      ref_trts = NULL,
+      workers = 1
+    )
+
+    result_table <- as.data.frame(
+      signatureSearch::result(gess_result)
+    )
+  }
 
   elapsed_seconds <- as.numeric(difftime(
     Sys.time(),
     start_time,
     units = "secs"
   ))
-
-  result_table <- as.data.frame(
-    signatureSearch::result(gess_result)
-  )
 
   validate_result_table(
     result_table,
