@@ -261,7 +261,7 @@ hallmark_query <- methods::slot(hallmark_result, "query")
 
 if (
   !is.list(hallmark_query) ||
-    !all(c("upset", "downset") %in% names(hallmark_query)) ||
+    !("upset" %in% names(hallmark_query)) ||
     length(hallmark_query$upset) != 49L ||
     length(hallmark_query$downset) != 0L ||
     anyNA(hallmark_query$upset) ||
