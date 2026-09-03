@@ -262,14 +262,14 @@ hallmark_query <- methods::slot(hallmark_result, "query")
 if (
   !is.list(hallmark_query) ||
     !all(c("upset", "downset") %in% names(hallmark_query)) ||
-    length(hallmark_query$upset) != 54L ||
+    length(hallmark_query$upset) != 49L ||
     length(hallmark_query$downset) != 0L ||
     anyNA(hallmark_query$upset) ||
     anyDuplicated(hallmark_query$upset)
 ) {
   stop(
     "Existing Hallmark result does not contain the expected unique ",
-    "54-UP/0-DOWN Entrez query."
+    "49-UP/0-DOWN executed Entrez query."
   )
 }
 
@@ -709,8 +709,8 @@ manifest_rows[["HALLMARK_IFNA_NONOVERLAP"]] <- data.frame(
   query_role = "pathway_sensitivity",
   source_contrast = "MSIGDB_HALLMARK_INTERFERON_ALPHA_RESPONSE",
   description = paste(
-    "54 Hallmark IFN-alpha genes not overlapping the complete",
-    "PRIMARY_150 signature; UP-only query"
+    "49 LINCS2-represented genes retained from the 54 Hallmark IFN-alpha",
+    "genes not overlapping the complete PRIMARY_150 signature; UP-only query"
   ),
   resolution = NA_real_,
   excluded_patient = NA_character_,
@@ -805,7 +805,7 @@ hallmark_row <- manifest[
 
 if (
   nrow(hallmark_row) != 1L ||
-    hallmark_row$entrez_up_n != 54L ||
+    hallmark_row$entrez_up_n != 49L ||
     hallmark_row$entrez_down_n != 0L ||
     hallmark_row$lincs_up_n != 49L
 ) {
