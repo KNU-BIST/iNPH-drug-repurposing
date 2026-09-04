@@ -724,6 +724,7 @@ run_locked_query <- function(query_id, reference_scope) {
       sortby = "NCS",
       tau = FALSE,
       ref_trts = NULL,
+      addAnnotations = FALSE,
       workers = 1
     )
 
