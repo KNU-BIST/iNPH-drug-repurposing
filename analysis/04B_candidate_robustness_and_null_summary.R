@@ -274,7 +274,7 @@ if (
 
 priority_check <- primary_thp1 |>
   filter(tolower(pert_iname) %in% c("rosuvastatin", "roflumilast")) |>
-  select(pert, pert_iname, rank_nonzero, NCS, WTCS, WTCS_FDR)
+  dplyr::select(pert, pert_iname, rank_nonzero, NCS, WTCS, WTCS_FDR)
 
 expected_priority_ranks <- c(rosuvastatin = 1, roflumilast = 14)
 observed_priority_ranks <- setNames(
@@ -456,7 +456,7 @@ null_summary <- null_thp1 |>
   ) |>
   left_join(
     primary_thp1 |>
-      select(
+      dplyr::select(
         pert,
         primary_NCS = NCS,
         primary_rank_nonzero = rank_nonzero,
@@ -466,9 +466,9 @@ null_summary <- null_thp1 |>
   )
 
 lower_tail_counts <- null_thp1 |>
-  select(pert, null_NCS = NCS) |>
+  dplyr::select(pert, null_NCS = NCS) |>
   inner_join(
-    primary_thp1 |> select(pert, primary_NCS = NCS),
+    primary_thp1 |> dplyr::select(pert, primary_NCS = NCS),
     by = "pert"
   ) |>
   group_by(pert) |>
@@ -503,10 +503,10 @@ if (
 # -----------------------------------------------------------------------------
 
 candidate_summary <- core_robustness |>
-  left_join(loo_summary |> select(-pert_iname), by = "pert") |>
+  left_join(loo_summary |> dplyr::select(-pert_iname), by = "pert") |>
   left_join(
     null_summary |>
-      select(
+      dplyr::select(
         pert,
         null_median_NCS,
         null_q025_NCS,
@@ -528,7 +528,7 @@ inspection_perts <- unique(c(
 
 priority_query_results <- observed_thp1 |>
   filter(pert %in% inspection_perts) |>
-  select(
+  dplyr::select(
     pert,
     pert_iname,
     query_id,
@@ -658,7 +658,7 @@ print(priority_check, row.names = FALSE)
 cat("\nTop 20 candidates by predefined robustness ranking:\n")
 print(
   candidate_summary |>
-    select(
+    dplyr::select(
       objective_robustness_rank,
       pert,
       pert_iname,
@@ -678,7 +678,7 @@ cat("\nRosuvastatin and roflumilast integrated results:\n")
 print(
   candidate_summary |>
     filter(tolower(pert_iname) %in% c("rosuvastatin", "roflumilast")) |>
-    select(
+    dplyr::select(
       objective_robustness_rank,
       pert,
       pert_iname,
