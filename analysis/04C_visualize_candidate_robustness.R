@@ -18,7 +18,10 @@ suppressPackageStartupMessages({
   library(tidyr)
 })
 
-ANALYSIS_ID <- "revision_candidate_robustness_visualization_v1"
+# Download filename may include percentile_v2; install as the original analysis/04C script.
+SCRIPT_BUILD <- "04C_PERCENTILE_V2_20260906"
+cat("Visualization script build:", SCRIPT_BUILD, "\n")
+ANALYSIS_ID <- "revision_candidate_robustness_visualization_v2"
 EXPECTED_LOCK <- paste0(
   "1e3a2b827a1429e406303871d547a9dec",
   "07ee4068078c666df69ca82e5428380"
@@ -495,11 +498,14 @@ null_paths <- save_plot_pair(
 
 
 # -----------------------------------------------------------------------------
-# Figure 5. Submitted rank versus integrated robustness rank
+# Figure 5. Primary percentile versus integrated robustness percentile
 # -----------------------------------------------------------------------------
 
 rank_scatter <- candidate_summary |>
-  dplyr::filter(!is.na(primary_rank_nonzero)) |>
+  dplyr::filter(
+    !is.na(primary_percentile_all),
+    !is.na(median_percentile_all)
+  ) |>
   dplyr::mutate(
     compound = display_name(pert_iname, pert),
     priority = tolower(pert_iname) %in% c("rosuvastatin", "roflumilast")
@@ -510,7 +516,7 @@ priority_scatter <- rank_scatter |>
 
 p_rank_scatter <- ggplot(
   rank_scatter,
-  aes(x = primary_rank_nonzero, y = objective_robustness_rank)
+  aes(x = primary_percentile_all, y = median_percentile_all)
 ) +
   geom_abline(
     slope = 1,
@@ -533,16 +539,31 @@ p_rank_scatter <- ggplot(
     size = 3.5,
     show.legend = FALSE
   ) +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1),
+    breaks = seq(0, 1, by = 0.2),
+    expand = expansion(mult = c(0.01, 0.02))
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1),
+    breaks = seq(0, 1, by = 0.2),
+    expand = expansion(mult = c(0.01, 0.02))
+  ) +
   scale_color_manual(
     values = c(rosuvastatin = "#0072B2", roflumilast = "#D55E00"),
     name = NULL
   ) +
   coord_cartesian(clip = "off") +
   labs(
-    x = "Submitted PRIMARY_150 rank among non-zero compounds",
-    y = "Objective robustness rank",
-    title = "Submitted ranking versus integrated robustness ranking",
-    subtitle = "Dashed line indicates identical submitted and robustness ranks"
+    x = "PRIMARY_150 percentile among 1,376 THP1 compounds",
+    y = "Median percentile across 11 core analyses",
+    title = "Primary connectivity versus integrated robustness",
+    subtitle = paste(
+      "Lower percentiles indicate stronger predicted reversal.\n",
+      "Dashed line indicates equal percentiles."
+    )
   ) +
   theme_revision(11) +
   theme(
@@ -552,7 +573,7 @@ p_rank_scatter <- ggplot(
 
 rank_scatter_paths <- save_plot_pair(
   p_rank_scatter,
-  "primary_rank_vs_objective_robustness_rank",
+  "primary_vs_core_percentiles_v2",
   width = 7.4,
   height = 6.3
 )
@@ -618,6 +639,7 @@ readr::write_csv(figure_manifest, figure_manifest_path)
 
 result <- list(
   analysis_id = ANALYSIS_ID,
+  script_build = SCRIPT_BUILD,
   manifest_content_sha256 = EXPECTED_LOCK,
   figure_paths = figure_paths,
   plot_data_paths = plot_data_paths,
@@ -653,4 +675,3 @@ cat("  Output directory           :", FIGURE_DIR, "\n")
 cat("  Output RDS                 :", OUTPUT_RDS, "\n")
 cat("============================================================\n")
 cat("Inspect all PNG files before selecting manuscript panels.\n")
-
