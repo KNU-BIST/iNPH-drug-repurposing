@@ -1,7 +1,7 @@
 # =============================================================================
 # Revision analysis 05E — Transparent CSF contextualization figure
 # Install as analysis/05E_visualize_csf_contextualization.R
-# Build: 05E_CSF_CONTEXTUALIZATION_FIGURE_V1_20260907
+# Build: 05E_CSF_CONTEXTUALIZATION_FIGURE_V2_20260907
 # =============================================================================
 #
 # Creates a supplementary diagnostic figure from the completed 05B and 05C
@@ -12,13 +12,13 @@
 # =============================================================================
 
 local({
-  BUILD <- "05E_CSF_CONTEXTUALIZATION_FIGURE_V1_20260907"
+  BUILD <- "05E_CSF_CONTEXTUALIZATION_FIGURE_V2_20260907"
 
   check <- function(ok, message) {
     if (!isTRUE(ok)) stop(message, call. = FALSE)
   }
 
-  required_packages <- c("ggplot2", "patchwork")
+  required_packages <- c("ggplot2", "patchwork", "ggrepel")
   missing_packages <- required_packages[
     !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
   ]
@@ -184,10 +184,17 @@ local({
     ggplot2::geom_hline(yintercept = 0, colour = "#999999", linewidth = 0.35) +
     ggplot2::geom_line(alpha = 0.75, linewidth = 0.65) +
     ggplot2::geom_point(size = 2.4) +
-    ggplot2::geom_text(
+    ggrepel::geom_text_repel(
       data = paired_long[paired_long$compartment == "Ventricular CSF", ],
-      ggplot2::aes(label = patient),
-      hjust = -0.65,
+      ggplot2::aes(label = paste0("P", patient)),
+      direction = "y",
+      hjust = 0,
+      nudge_x = 0.04,
+      box.padding = 0.15,
+      point.padding = 0.1,
+      min.segment.length = 0,
+      segment.alpha = 0.45,
+      seed = 42,
       size = 3,
       show.legend = FALSE
     ) +
@@ -204,7 +211,9 @@ local({
       x = NULL,
       y = "Median transfer score"
     ) +
-    base_theme
+    base_theme +
+    ggplot2::theme(plot.margin = ggplot2::margin(5.5, 24, 5.5, 5.5)) +
+    ggplot2::coord_cartesian(clip = "off")
 
   panel_b <- ggplot2::ggplot(
     donor,
