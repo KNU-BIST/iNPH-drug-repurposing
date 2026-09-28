@@ -35,6 +35,9 @@
 # -------
 # data/processed/loo_signature_stability.rds
 # data/processed/loo_up_gene_persistence.csv
+# data/processed/revision_loo_signatures.rds
+# results/revision/loo_signature_summary.csv
+# results/revision/loo_signature_genes.csv
 #
 # Reproducibility notes
 # ---------------------
@@ -75,8 +78,38 @@ suppressPackageStartupMessages({
 })
 
 PROCESSED_DIR <- here::here("data", "processed")
+REVISION_RESULTS_DIR <- here::here("results", "revision")
 SEURAT_PATH <- file.path(PROCESSED_DIR, "seu_monocyte_subclustered.rds")
 SIGNATURE_PATH <- file.path(PROCESSED_DIR, "inph_ifn_signature.rds")
+
+LOO_STABILITY_PATH <- file.path(
+  PROCESSED_DIR,
+  "loo_signature_stability.rds"
+)
+LOO_PERSISTENCE_PATH <- file.path(
+  PROCESSED_DIR,
+  "loo_up_gene_persistence.csv"
+)
+REVISION_LOO_SIGNATURES_PATH <- file.path(
+  PROCESSED_DIR,
+  "revision_loo_signatures.rds"
+)
+REVISION_LOO_SUMMARY_PATH <- file.path(
+  REVISION_RESULTS_DIR,
+  "loo_signature_summary.csv"
+)
+REVISION_LOO_GENES_PATH <- file.path(
+  REVISION_RESULTS_DIR,
+  "loo_signature_genes.csv"
+)
+
+OUTPUT_PATHS <- c(
+  LOO_STABILITY_PATH,
+  LOO_PERSISTENCE_PATH,
+  REVISION_LOO_SIGNATURES_PATH,
+  REVISION_LOO_SUMMARY_PATH,
+  REVISION_LOO_GENES_PATH
+)
 
 required_inputs <- c(SEURAT_PATH, SIGNATURE_PATH)
 input_info <- file.info(required_inputs)
@@ -91,6 +124,21 @@ if (length(bad_inputs) > 0L) {
   stop(
     "Required input file(s) missing or empty: ",
     paste(bad_inputs, collapse = ", ")
+  )
+}
+
+overwrite_allowed <- identical(
+  Sys.getenv("INPH_OVERWRITE_LOO_RESULTS"),
+  "1"
+)
+existing_outputs <- OUTPUT_PATHS[file.exists(OUTPUT_PATHS)]
+
+if (length(existing_outputs) > 0L && !overwrite_allowed) {
+  stop(
+    "LOO output(s) already exist: ",
+    paste(existing_outputs, collapse = ", "),
+    ". Refusing to overwrite automatically. If replacement is intentional, ",
+    "set INPH_OVERWRITE_LOO_RESULTS=1 for that run."
   )
 }
 
@@ -476,10 +524,7 @@ if (
   )
 }
 
-loo_output_path <- file.path(
-  PROCESSED_DIR,
-  "loo_signature_stability.rds"
-)
+loo_output_path <- LOO_STABILITY_PATH
 
 saveRDS(loo_df, loo_output_path)
 
@@ -544,10 +589,7 @@ cat(
   sep = ""
 )
 
-persistence_output_path <- file.path(
-  PROCESSED_DIR,
-  "loo_up_gene_persistence.csv"
-)
+persistence_output_path <- LOO_PERSISTENCE_PATH
 
 readr::write_csv(
   persist_df,
@@ -556,13 +598,123 @@ readr::write_csv(
 
 
 # -----------------------------------------------------------------------------
-# Section 7 . Verify outputs and report completion
+# Section 7 . Save query-ready LOO signatures for revision LINCS analyses
 # -----------------------------------------------------------------------------
 
-output_paths <- c(
-  loo_output_path,
-  persistence_output_path
+loo_query_ids <- paste0("LOO_DROP_P", loo_df$dropped)
+
+loo_signatures <- setNames(
+  lapply(loo_df$dropped, function(patient_id) {
+    iteration <- loo_results[[as.character(patient_id)]]
+    list(
+      up = iteration$loo_up,
+      down = iteration$loo_dn
+    )
+  }),
+  loo_query_ids
 )
+
+if (length(loo_signatures) != 9L ||
+    !all(vapply(
+      loo_signatures,
+      function(x) {
+        length(x$up) == TOP_N &&
+          length(x$down) == TOP_N &&
+          !anyDuplicated(x$up) &&
+          !anyDuplicated(x$down) &&
+          length(intersect(x$up, x$down)) == 0L
+      },
+      logical(1)
+    ))) {
+  stop("One or more query-ready LOO signatures failed validation.")
+}
+
+loo_query_summary <- dplyr::mutate(
+  loo_df,
+  query_id = loo_query_ids,
+  excluded_patient = dropped,
+  signature_up_n = TOP_N,
+  signature_down_n = TOP_N,
+  .before = 1
+)
+
+loo_signature_genes <- dplyr::bind_rows(lapply(
+  names(loo_signatures),
+  function(query_id) {
+    signature <- loo_signatures[[query_id]]
+    dplyr::bind_rows(
+      data.frame(
+        query_id = query_id,
+        excluded_patient = sub("LOO_DROP_P", "", query_id),
+        direction = "UP",
+        rank = seq_along(signature$up),
+        gene = signature$up,
+        stringsAsFactors = FALSE
+      ),
+      data.frame(
+        query_id = query_id,
+        excluded_patient = sub("LOO_DROP_P", "", query_id),
+        direction = "DOWN",
+        rank = seq_along(signature$down),
+        gene = signature$down,
+        stringsAsFactors = FALSE
+      )
+    )
+  }
+))
+
+revision_loo_result <- list(
+  analysis_id = "revision_04_loo_signatures",
+  configuration = list(
+    contrast = "cluster 5 versus cluster 0",
+    signature_size_per_direction = TOP_N,
+    minimum_pseudobulk_cells = MIN_PSEUDOBULK_CELLS,
+    design = "~ patient + state",
+    lfc_shrinkage = "apeglm",
+    extraction_rule = paste(
+      "FDR < 0.05; top 150 genes separately by shrunken",
+      "positive and negative log2 fold change"
+    )
+  ),
+  signatures = loo_signatures,
+  query_summary = loo_query_summary,
+  primary_signature = inph_signature,
+  aggregate_stability = list(
+    mean_jaccard_up = mean_jaccard_up,
+    mean_jaccard_down = mean_jaccard_dn,
+    overall_mean_jaccard = overall_mean_jaccard,
+    original_up_seen_at_least_once = n_tracked,
+    original_up_stable_all_nine = n_stable
+  ),
+  input_provenance = list(
+    seurat_path = "data/processed/seu_monocyte_subclustered.rds",
+    seurat_md5 = unname(tools::md5sum(SEURAT_PATH)),
+    primary_signature_path = "data/processed/inph_ifn_signature.rds",
+    primary_signature_md5 = unname(tools::md5sum(SIGNATURE_PATH))
+  )
+)
+
+dir.create(REVISION_RESULTS_DIR, showWarnings = FALSE, recursive = TRUE)
+
+saveRDS(
+  revision_loo_result,
+  REVISION_LOO_SIGNATURES_PATH
+)
+readr::write_csv(
+  loo_query_summary,
+  REVISION_LOO_SUMMARY_PATH
+)
+readr::write_csv(
+  loo_signature_genes,
+  REVISION_LOO_GENES_PATH
+)
+
+
+# -----------------------------------------------------------------------------
+# Section 8 . Verify outputs and report completion
+# -----------------------------------------------------------------------------
+
+output_paths <- OUTPUT_PATHS
 
 output_info <- file.info(output_paths)
 
@@ -579,6 +731,26 @@ if (length(bad_outputs) > 0L) {
   )
 }
 
+revision_loo_check <- readRDS(REVISION_LOO_SIGNATURES_PATH)
+revision_summary_check <- readr::read_csv(
+  REVISION_LOO_SUMMARY_PATH,
+  show_col_types = FALSE
+)
+revision_genes_check <- readr::read_csv(
+  REVISION_LOO_GENES_PATH,
+  show_col_types = FALSE
+)
+
+if (length(revision_loo_check$signatures) != 9L ||
+    !identical(
+      names(revision_loo_check$signatures),
+      loo_query_ids
+    ) ||
+    nrow(revision_summary_check) != 9L ||
+    nrow(revision_genes_check) != 9L * 2L * TOP_N) {
+  stop("Query-ready LOO outputs failed read-back validation.")
+}
+
 cat("\n============================================================\n")
 cat("  LEAVE-ONE-OUT ROBUSTNESS ANALYSIS COMPLETE\n")
 cat("============================================================\n")
@@ -588,6 +760,7 @@ cat("  Mean Jaccard DOWN              :", sprintf("%.3f", mean_jaccard_dn), "\n"
 cat("  Overall mean Jaccard           :", sprintf("%.3f", overall_mean_jaccard), "\n")
 cat("  Original UP genes seen >=1 LOO :", n_tracked, "\n")
 cat("  Original UP genes stable 9/9   :", n_stable, "\n")
+cat("  Query-ready LOO signatures     :", length(loo_signatures), "\n")
 cat("============================================================\n")
 
 cat("\nOutputs saved and verified:\n")

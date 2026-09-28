@@ -433,6 +433,7 @@ lg_inph <- lognorm_cols(
 )
 
 inph <- tibble(
+  cell_id = colnames(seu),
   donor = as.character(seu$patient),
   is_c5 = is_c5,
   A_score = a_inph[, "up_excl"] - a_inph[, "down"],
@@ -568,6 +569,7 @@ report(A); report(B)
 contextualization_result <- list(
   engine_A_primary = A,
   engine_B_sensitivity = B,
+  inph_cell_scores = inph,
   params = list(
     read_block = READ_BLOCK,
     auc_maxrank = AUC_MAXRANK,
