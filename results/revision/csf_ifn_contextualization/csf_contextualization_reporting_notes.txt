@@ -1,0 +1,15 @@
+05B_CSF_MONOCYTE_IFN_CONTEXTUALIZATION_V1_20260907
+REPORTING GUARDRAILS
+1. Describe the transferred program as a blood-derived IFN-response-high monocyte program observed in iNPH.
+2. Describe CSF cells as independently selected classical-monocyte candidates from ventricular CSF.
+3. Report exact cell and donor counts; do not convert the result into a disease-specificity claim.
+4. Treat paired PBMC-versus-CSF tests as exploratory compartment comparisons with nominal unadjusted P values.
+5. Do not imply that CSF enrichment proves CNS origin, brain-to-blood signaling, cognition effects, or therapeutic efficacy.
+6. Patient 6 is descriptive because MoCA is unknown and is not part of the canonical nine-donor PBMC comparison.
+7. No High-versus-Low MoCA test is performed in this analysis.
+Frozen AUCell threshold: 0.09726318141
+Frozen aucMaxRank: 1500
+Selection-panel overlap with transfer UP:
+Selection-panel overlap with transfer DOWN: S100A8
+Source paper: Duy et al., PNAS 2025, PMID 40324076,
+https://pmc.ncbi.nlm.nih.gov/articles/PMC12087963/
